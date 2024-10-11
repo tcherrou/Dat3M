@@ -1,5 +1,5 @@
 #include <pthread.h>
-#include "clh_mutex_char.h"
+#include "mutex.h"
 #include <assert.h>
 
 #ifndef NTHREADS
@@ -7,19 +7,19 @@
 #endif
 
 char shared;
-clh_mutex_t lock;
+mutex_t mutex;
 char sum = 0;
 
 void *thread_n(void *arg)
 {
     intptr_t index = ((intptr_t) arg);
 
-    clh_mutex_lock(&lock);
+    mutex_lock(&mutex);
     shared = index;
     char r = shared;
     assert(r == index);
     sum++;
-    clh_mutex_unlock(&lock);
+    mutex_unlock(&mutex);
     return NULL;
 }
 
@@ -27,7 +27,7 @@ int main()
 {
     pthread_t t[NTHREADS];
 
-    clh_mutex_init(&lock);
+    mutex_init(&mutex);
 
     for (char i = 0; i < NTHREADS; i++)
         pthread_create(&t[i], 0, thread_n, (void *)(size_t)i);
