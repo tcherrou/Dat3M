@@ -10,6 +10,8 @@ import com.dat3m.dartagnan.program.Register;
 import com.dat3m.dartagnan.program.analysis.BranchEquivalence;
 import com.dat3m.dartagnan.program.analysis.ExecutionAnalysis;
 import com.dat3m.dartagnan.program.analysis.alias.AliasAnalysis;
+import com.dat3m.dartagnan.program.analysis.interval.IntervalAnalysis;
+import com.dat3m.dartagnan.program.analysis.interval.Interval;
 import com.dat3m.dartagnan.program.event.Event;
 import com.dat3m.dartagnan.program.event.MemoryEvent;
 import com.dat3m.dartagnan.program.event.RegWriter;
@@ -36,6 +38,11 @@ import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.Map;
 
+import java.util.regex.MatchResult;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+
 import static com.dat3m.dartagnan.configuration.OptionNames.*;
 import static com.dat3m.dartagnan.program.event.Tag.INIT;
 import static com.dat3m.dartagnan.program.event.Tag.WRITE;
@@ -52,6 +59,7 @@ public final class EncodingContext {
     private final ExecutionAnalysis executionAnalysis;
     private final AliasAnalysis aliasAnalysis;
     private final RelationAnalysis relationAnalysis;
+    private final IntervalAnalysis intervalAnalysis;
     private final FormulaManager formulaManager;
     private final BooleanFormulaManager booleanFormulaManager;
 
@@ -84,6 +92,7 @@ public final class EncodingContext {
         executionAnalysis = a.requires(ExecutionAnalysis.class);
         aliasAnalysis = a.requires(AliasAnalysis.class);
         relationAnalysis = a.requires(RelationAnalysis.class);
+	intervalAnalysis = a.requires(IntervalAnalysis.class);
         formulaManager = m;
         booleanFormulaManager = m.getBooleanFormulaManager();
     }
@@ -163,6 +172,12 @@ public final class EncodingContext {
         }
         if (lhs instanceof BitvectorFormula l && rhs instanceof BitvectorFormula r) {
             BitvectorFormulaManager bvmgr = formulaManager.getBitvectorFormulaManager();
+            int difference = bvmgr.getLength(l) - bvmgr.getLength(r);
+            if(difference >= 0) {
+                r = bvmgr.extend(r,difference,true);
+            } else {
+                l = bvmgr.extend(l,Math.abs(difference),true);
+            }
             return switch (op) {
                 case EQ -> bvmgr.equal(l, r);
                 case NEQ -> booleanFormulaManager.not(bvmgr.equal(l, r));
@@ -412,8 +427,17 @@ public final class EncodingContext {
             }
         }
     }
-
     Formula makeVariable(String name, Type type) {
+	Map<Register,Interval> finalIntervals = intervalAnalysis.finalIntervals;
+	Pattern pattern = Pattern.compile("\\(\\d*");
+	Matcher matcher = pattern.matcher(name);
+	int id = -1;
+    String regName = "";
+	if(matcher.find()) {
+		MatchResult res = matcher.toMatchResult();
+		id = Integer.parseInt(name.substring(res.start()+1,res.end()));
+        regName = name.substring(0,res.start());
+	}
         if (type instanceof BooleanType) {
             return booleanFormulaManager.makeVariable(name);
         }
@@ -421,7 +445,21 @@ public final class EncodingContext {
             if (useIntegers) {
                 return formulaManager.getIntegerFormulaManager().makeVariable(name);
             } else {
-                return formulaManager.getBitvectorFormulaManager().makeVariable(integerType.getBitWidth(), name);
+
+		Map<Integer,Map<String,Interval>> intervalMap = intervalAnalysis.getIntervalMap();
+
+		Map<String,Interval> nameToInterval = intervalMap.getOrDefault(id,new HashMap<>());
+		Interval interval = nameToInterval.getOrDefault(regName,Interval.getTop());
+		int width = integerType.getBitWidth();
+		if (!interval.isTop()){
+            BigInteger lb = BigInteger.valueOf(interval.lowerBound);
+            BigInteger ub = BigInteger.valueOf(interval.upperBound);
+            int largestBitWidth = Math.max(lb.bitLength(),ub.bitLength());
+            width = largestBitWidth == 0 ? 1 : largestBitWidth;
+		}
+
+
+                return formulaManager.getBitvectorFormulaManager().makeVariable(width, name);
             }
         }
         throw new UnsupportedOperationException(String.format("Cannot encode variable of type %s.", type));
