@@ -127,9 +127,9 @@ typedef struct {
 typedef struct
 {
     atomic_char ingress;
-    int padding1[8];      // To avoid false sharing with the ingress and egress
+    char padding1[8];      // To avoid false sharing with the ingress and egress
     atomic_char egress;
-    int padding2[8];
+    char padding2[8];
     char maxArrayWaiters;
     _Atomic(awnsb_node_t *)* waitersArray;
 } ticket_awnsb_mutex_t;
