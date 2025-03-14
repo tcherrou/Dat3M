@@ -695,7 +695,7 @@ b.newThread(0);
         analysisContext.register(ExecutionAnalysis.class, ExecutionAnalysis.fromConfig(program, ProgressModel.FAIR, analysisContext, config));
         analysisContext.register(ReachingDefinitionsAnalysis.class, ReachingDefinitionsAnalysis.fromConfig(program, analysisContext, config));
 
-	final IntervalAnalysis intervalAnalysis = IntervalAnalysis.fromConfig(program,analysisContext,config);
+	final IntervalAnalysis intervalAnalysis = IntervalAnalysis.fromConfigPatterson(program,analysisContext,config);
 
 
 	Map<Register,Interval> expectedIntervals = new HashMap<>();
