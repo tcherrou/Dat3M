@@ -184,6 +184,12 @@ class ExpressionEncoder implements ExpressionVisitor<Formula> {
             }
         } else if (lhs instanceof BitvectorFormula bv1 && rhs instanceof BitvectorFormula bv2) {
             BitvectorFormulaManager bvmgr = bitvectorFormulaManager();
+            int difference = bvmgr.getLength(bv1) - bvmgr.getLength(bv2);
+            if(difference >= 0) {
+                bv2 = bvmgr.extend(bv2,difference,true);
+            } else {
+                bv1 = bvmgr.extend(bv1,Math.abs(difference),true);
+            }
             return switch (iBin.getKind()) {
                 case ADD -> bvmgr.add(bv1, bv2);
                 case SUB -> bvmgr.subtract(bv1, bv2);
