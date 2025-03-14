@@ -8,6 +8,7 @@ import com.dat3m.dartagnan.program.Program;
 import com.dat3m.dartagnan.program.Thread;
 import com.dat3m.dartagnan.program.analysis.*;
 import com.dat3m.dartagnan.program.analysis.alias.AliasAnalysis;
+import com.dat3m.dartagnan.program.analysis.interval.IntervalAnalysis;
 import com.dat3m.dartagnan.program.event.Event;
 import com.dat3m.dartagnan.program.processing.ProcessingManager;
 import com.dat3m.dartagnan.utils.Result;
@@ -86,6 +87,8 @@ public abstract class ModelChecker {
         analysisContext.register(ReachingDefinitionsAnalysis.class, ReachingDefinitionsAnalysis.fromConfig(program, analysisContext, config));
         analysisContext.register(AliasAnalysis.class, AliasAnalysis.fromConfig(program, analysisContext, config));
         analysisContext.register(ThreadSymmetry.class, ThreadSymmetry.fromConfig(program, config));
+        analysisContext.register(IntervalAnalysis.class,IntervalAnalysis.fromConfigPatterson(program,analysisContext,config));
+
         for(Thread thread : program.getThreads()) {
             for(Event e : thread.getEvents()) {
                 // Some events perform static analyses by themselves (e.g. Svcomp's EndAtomic)
