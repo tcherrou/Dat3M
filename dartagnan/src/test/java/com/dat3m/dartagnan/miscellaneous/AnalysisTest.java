@@ -13,6 +13,8 @@ import com.dat3m.dartagnan.program.Register;
 import com.dat3m.dartagnan.program.analysis.BranchEquivalence;
 import com.dat3m.dartagnan.program.analysis.ExecutionAnalysis;
 import com.dat3m.dartagnan.program.analysis.ReachingDefinitionsAnalysis;
+import com.dat3m.dartagnan.program.analysis.interval.IntervalAnalysis;
+import com.dat3m.dartagnan.program.analysis.interval.Interval;
 import com.dat3m.dartagnan.program.analysis.alias.AliasAnalysis;
 import com.dat3m.dartagnan.program.event.Event;
 import com.dat3m.dartagnan.program.event.EventFactory;
@@ -31,6 +33,8 @@ import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
 
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 import static com.dat3m.dartagnan.configuration.Alias.*;
 import static com.dat3m.dartagnan.configuration.OptionNames.ALIAS_METHOD;
@@ -605,6 +609,106 @@ public class AnalysisTest {
         assertAlias(MUST, a, me2, me4);
         assertAlias(MAY, a, me3, me4);
     }
+	
+
+    @Test 
+    public void simpleInterval() throws InvalidConfigurationException {
+	ProgramBuilder b = ProgramBuilder.forLanguage(SourceLanguage.LITMUS);
+	b.newThread(0);
+	Register r0 = b.getOrNewRegister(0,"r0");
+	Register r1 = b.getOrNewRegister(0,"r1");
+	Local assignEvent = newLocal(r0,value(1));
+	Local copyEvent = newLocal(r1,r0);
+	// Local reassignEvent = newLocal(r0,value(1));
+	
+	b.addChild(0,assignEvent);
+	b.addChild(0,copyEvent);
+	// b.addChild(0,reassignEvent);
+
+	Program program = b.build();
+        Compilation.newInstance().run(program);
+        LoopUnrolling.newInstance().run(program);
+        MemoryAllocation.newInstance().run(program);
+
+	Configuration config = Configuration.builder().build();
+	
+
+
+	Context analysisContext = Context.create();
+	analysisContext.register(BranchEquivalence.class, BranchEquivalence.fromConfig(program, config));
+        analysisContext.register(ExecutionAnalysis.class, ExecutionAnalysis.fromConfig(program, ProgressModel.FAIR, analysisContext, config));
+        analysisContext.register(ReachingDefinitionsAnalysis.class, ReachingDefinitionsAnalysis.fromConfig(program, analysisContext, config));
+
+	final IntervalAnalysis intervalAnalysis = IntervalAnalysis.fromConfigPatterson(program,analysisContext,config);
+
+
+	Map<Register,Interval> expectedIntervals = new HashMap<>();
+	expectedIntervals.put(r0,new Interval(1,1));
+	expectedIntervals.put(r1,new Interval(1,1));
+
+
+
+	assertEquals(expectedIntervals,intervalAnalysis.finalIntervals);
+
+    }
+
+    @Test
+    public void joiningIntervals() throws InvalidConfigurationException {
+	ProgramBuilder b = ProgramBuilder.forLanguage(SourceLanguage.LITMUS);
+b.newThread(0);
+	Register r0 = b.getOrNewRegister(0,"r0");
+	// Local e0 = newLocal(r0,value(0));
+	Local e1 = newLocal(r0,value(-1));	
+	Local e2 = newLocal(r0,value(1));	
+	// Local reassignEventGoto = newLocal(r0,value(1));
+	// Local reassignEventRegularFlow = newLocal(r0,value(1));	
+	Label alt = b.getOrCreateLabel(0,"alt");
+	Label join = b.getOrCreateLabel(0,"join");
+
+	// b.addChild(0,e0);
+	// b.addChild(0,newGoto(l1));
+	// b.addChild(0,e1);
+	// b.addChild(0,l1);
+	// b.addChild(0,e2);
+	
+
+	Local e0 = newLocal(r0,value(0));
+	
+
+	b.addChild(0,newJump(b.newConstant(types.getBooleanType()),alt));
+	b.addChild(0,e1);
+	b.addChild(0,newGoto(join));
+	b.addChild(0,alt);
+	b.addChild(0,e2);
+	b.addChild(0,join);
+	
+	
+	Program program = b.build();
+        Compilation.newInstance().run(program);
+        LoopUnrolling.newInstance().run(program);
+        MemoryAllocation.newInstance().run(program);
+
+	Configuration config = Configuration.builder().build();
+	
+	Context analysisContext = Context.create();
+	analysisContext.register(BranchEquivalence.class, BranchEquivalence.fromConfig(program, config));
+        analysisContext.register(ExecutionAnalysis.class, ExecutionAnalysis.fromConfig(program, ProgressModel.FAIR, analysisContext, config));
+        analysisContext.register(ReachingDefinitionsAnalysis.class, ReachingDefinitionsAnalysis.fromConfig(program, analysisContext, config));
+
+	final IntervalAnalysis intervalAnalysis = IntervalAnalysis.fromConfig(program,analysisContext,config);
+
+
+	Map<Register,Interval> expectedIntervals = new HashMap<>();
+	expectedIntervals.put(r0,new Interval(-1,1));
+	
+	assertEquals(expectedIntervals,intervalAnalysis.finalIntervals);
+
+
+	
+
+    }    
+
+
 
     private Load newLoad(Register value, Expression address) {
         return EventFactory.newLoad(value, address);
