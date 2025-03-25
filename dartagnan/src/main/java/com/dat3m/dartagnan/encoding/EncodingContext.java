@@ -84,6 +84,7 @@ public final class EncodingContext {
     private final Map<Event, Formula> addresses = new HashMap<>();
     private final Map<Event, Formula> values = new HashMap<>();
     private final Map<Event, Formula> results = new HashMap<>();
+    final Map<BitvectorFormula,Interval> bvToInterval = new HashMap<>(); 
 
     private EncodingContext(VerificationTask t, Context a, FormulaManager m) {
         verificationTask = checkNotNull(t);
@@ -172,12 +173,6 @@ public final class EncodingContext {
         }
         if (lhs instanceof BitvectorFormula l && rhs instanceof BitvectorFormula r) {
             BitvectorFormulaManager bvmgr = formulaManager.getBitvectorFormulaManager();
-            int difference = bvmgr.getLength(l) - bvmgr.getLength(r);
-            if(difference >= 0) {
-                r = bvmgr.extend(r,difference,true);
-            } else {
-                l = bvmgr.extend(l,Math.abs(difference),true);
-            }
             return switch (op) {
                 case EQ -> bvmgr.equal(l, r);
                 case NEQ -> booleanFormulaManager.not(bvmgr.equal(l, r));
@@ -428,16 +423,6 @@ public final class EncodingContext {
         }
     }
     Formula makeVariable(String name, Type type) {
-	Map<Register,Interval> finalIntervals = intervalAnalysis.finalIntervals;
-	Pattern pattern = Pattern.compile("\\(\\d*");
-	Matcher matcher = pattern.matcher(name);
-	int id = -1;
-    String regName = "";
-	if(matcher.find()) {
-		MatchResult res = matcher.toMatchResult();
-		id = Integer.parseInt(name.substring(res.start()+1,res.end()));
-        regName = name.substring(0,res.start());
-	}
         if (type instanceof BooleanType) {
             return booleanFormulaManager.makeVariable(name);
         }
@@ -445,21 +430,7 @@ public final class EncodingContext {
             if (useIntegers) {
                 return formulaManager.getIntegerFormulaManager().makeVariable(name);
             } else {
-
-		Map<Integer,Map<String,Interval>> intervalMap = intervalAnalysis.getIntervalMap();
-
-		Map<String,Interval> nameToInterval = intervalMap.getOrDefault(id,new HashMap<>());
-		Interval interval = nameToInterval.getOrDefault(regName,Interval.getTop());
-		int width = integerType.getBitWidth();
-		if (!interval.isTop()){
-            BigInteger lb = BigInteger.valueOf(interval.lowerBound);
-            BigInteger ub = BigInteger.valueOf(interval.upperBound);
-            int largestBitWidth = Math.max(lb.bitLength(),ub.bitLength());
-            width = largestBitWidth == 0 ? 1 : largestBitWidth;
-		}
-
-
-                return formulaManager.getBitvectorFormulaManager().makeVariable(width, name);
+                return formulaManager.getBitvectorFormulaManager().makeVariable(integerType.getBitWidth(), name);
             }
         }
         throw new UnsupportedOperationException(String.format("Cannot encode variable of type %s.", type));

@@ -1,5 +1,6 @@
 package com.dat3m.dartagnan.encoding;
 
+import com.dat3m.dartagnan.expression.integers.IntCmpOp;
 import com.dat3m.dartagnan.configuration.ProgressModel;
 import com.dat3m.dartagnan.expression.Expression;
 import com.dat3m.dartagnan.expression.type.IntegerType;
@@ -8,6 +9,7 @@ import com.dat3m.dartagnan.program.Register;
 import com.dat3m.dartagnan.program.ScopeHierarchy;
 import com.dat3m.dartagnan.program.Thread;
 import com.dat3m.dartagnan.program.analysis.BranchEquivalence;
+import com.dat3m.dartagnan.program.analysis.interval.Interval;
 import com.dat3m.dartagnan.program.analysis.ExecutionAnalysis;
 import com.dat3m.dartagnan.program.analysis.ReachingDefinitionsAnalysis;
 import com.dat3m.dartagnan.program.event.Event;
@@ -76,6 +78,7 @@ public class ProgramEncoder implements Encoder {
 
     public BooleanFormula encodeFullProgram() {
         return context.getBooleanFormulaManager().and(
+		        encodeBounds(),
                 encodeControlBarriers(),
                 encodeConstants(),
                 encodeMemory(),
@@ -555,5 +558,32 @@ public class ProgramEncoder implements Encoder {
         }
 
     }
+
+
+// ============= Bounds =============
+//
+public BooleanFormula encodeBounds() {
+	Map<BitvectorFormula,Interval> bvToInterval = context.bvToInterval;
+	FormulaManager fmgr = context.getFormulaManager();
+	BitvectorFormulaManager bvmgr = fmgr.getBitvectorFormulaManager();
+	ArrayList<BooleanFormula> enc = new ArrayList<>();
+	for(var entry : bvToInterval.entrySet()) {
+		BitvectorFormula variable = entry.getKey();
+		Interval interval = entry.getValue();
+		int upperBound = interval.upperBound;
+		int lowerBound = interval.lowerBound;
+		if(!(interval.isTop())) {
+			BooleanFormula constraintLTE = context.encodeComparison(IntCmpOp.LTE,variable,bvmgr.makeBitvector(bvmgr.getLength(variable), upperBound));
+			BooleanFormula constraintGTE = context.encodeComparison(IntCmpOp.GTE,variable,bvmgr.makeBitvector(bvmgr.getLength(variable), lowerBound));
+			enc.add(constraintLTE);
+			enc.add(constraintGTE);
+	}
+	}
+	return context.getBooleanFormulaManager().and(enc);
+	
+
 }
+
+}
+
 
