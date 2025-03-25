@@ -15,6 +15,8 @@ import com.dat3m.dartagnan.expression.integers.*;
 import com.dat3m.dartagnan.expression.misc.ITEExpr;
 import com.dat3m.dartagnan.expression.type.TypeFactory;
 import com.dat3m.dartagnan.program.Register;
+import com.dat3m.dartagnan.program.analysis.interval.IntervalAnalysis;
+import com.dat3m.dartagnan.program.analysis.interval.Interval;
 import com.dat3m.dartagnan.program.event.Event;
 import com.dat3m.dartagnan.program.memory.FinalMemoryValue;
 import com.dat3m.dartagnan.program.memory.MemoryObject;
@@ -23,6 +25,10 @@ import org.sosy_lab.java_smt.api.*;
 import org.sosy_lab.java_smt.api.NumeralFormula.IntegerFormula;
 
 import java.math.BigInteger;
+import java.util.HashMap;
+import java.util.Map;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -30,7 +36,7 @@ import static com.google.common.base.Preconditions.checkState;
 import static java.util.Arrays.asList;
 
 class ExpressionEncoder implements ExpressionVisitor<Formula> {
-
+    private final Logger logger = LogManager.getLogger(ExpressionEncoder.class);
     private static final TypeFactory types = TypeFactory.getInstance();
 
     private final EncodingContext context;
@@ -329,7 +335,17 @@ class ExpressionEncoder implements ExpressionVisitor<Formula> {
                 reg.getName() + "_" + reg.getFunction().getId() + "_final" :
                 reg.getName() + "(" + event.getGlobalId() + ")";
         Type type = reg.getType();
-        return context.makeVariable(name, type);
+        Formula variable = context.makeVariable(name, type);
+        if (variable instanceof BitvectorFormula bv && event != null) {
+            int id = event.getGlobalId();
+
+            IntervalAnalysis intervalAnalysis = context.getAnalysisContext().get(IntervalAnalysis.class);
+            Map<Integer, Map<String, Interval>> intervalMap = intervalAnalysis.getIntervalMap();
+            Map<String, Interval> nameToInterval = intervalMap.getOrDefault(id, new HashMap<>());
+            Interval interval = nameToInterval.getOrDefault(reg.getName(), Interval.getTop());
+            context.bvToInterval.put(bv, interval);
+        }
+        return variable;
     }
 
     @Override

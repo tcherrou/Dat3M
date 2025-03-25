@@ -12,6 +12,8 @@ import com.dat3m.dartagnan.program.analysis.BranchEquivalence;
 import com.dat3m.dartagnan.program.analysis.ExecutionAnalysis;
 import com.dat3m.dartagnan.program.analysis.alias.AliasAnalysis;
 import com.dat3m.dartagnan.program.event.BlockingEvent;
+import com.dat3m.dartagnan.program.analysis.interval.IntervalAnalysis;
+import com.dat3m.dartagnan.program.analysis.interval.Interval;
 import com.dat3m.dartagnan.program.event.Event;
 import com.dat3m.dartagnan.program.event.MemoryEvent;
 import com.dat3m.dartagnan.program.event.RegWriter;
@@ -53,6 +55,7 @@ public final class EncodingContext {
     private final ExecutionAnalysis executionAnalysis;
     private final AliasAnalysis aliasAnalysis;
     private final RelationAnalysis relationAnalysis;
+    private final IntervalAnalysis intervalAnalysis;
     private final FormulaManager formulaManager;
     private final BooleanFormulaManager booleanFormulaManager;
     private final TupleFormulaManager tupleFormulaManager;
@@ -81,6 +84,7 @@ public final class EncodingContext {
     private final Map<Event, Formula> results = new HashMap<>();
     private final Map<MemoryObject, Formula> objAddress = new HashMap<>();
     private final Map<MemoryObject, Formula> objSize = new HashMap<>();
+    final Map<BitvectorFormula,Interval> bvToInterval = new HashMap<>();
 
     private EncodingContext(VerificationTask t, Context a, FormulaManager m) {
         verificationTask = checkNotNull(t);
@@ -89,6 +93,7 @@ public final class EncodingContext {
         executionAnalysis = a.requires(ExecutionAnalysis.class);
         aliasAnalysis = a.requires(AliasAnalysis.class);
         relationAnalysis = a.requires(RelationAnalysis.class);
+	    intervalAnalysis = a.requires(IntervalAnalysis.class);
         formulaManager = m;
         booleanFormulaManager = m.getBooleanFormulaManager();
         tupleFormulaManager = new TupleFormulaManager(this);
@@ -475,7 +480,6 @@ public final class EncodingContext {
             }
         }
     }
-
     Formula makeVariable(String name, Type type) {
         if (type instanceof BooleanType) {
             return booleanFormulaManager.makeVariable(name);

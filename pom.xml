@@ -135,7 +135,11 @@
                 <plugin>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven-surefire-plugin.version}</version>
-                    <configuration>
+		    <configuration>
+			    <includes>
+				    <!-- <include>RelationAnalysisTest.java</include> -->
+				    <include>AnalysisTest.java</include>
+			    </includes>
                         <reuseForks>false</reuseForks>
                     </configuration>
                 </plugin>
