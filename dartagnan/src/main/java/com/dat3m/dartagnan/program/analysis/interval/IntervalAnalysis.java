@@ -1,35 +1,28 @@
 package com.dat3m.dartagnan.program.analysis.interval;
 
+import com.dat3m.dartagnan.expression.integers.*;
 import com.dat3m.dartagnan.program.analysis.alias.AliasAnalysis;
+import com.dat3m.dartagnan.program.event.core.threading.ThreadArgument;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import com.dat3m.dartagnan.utils.Utils;
 
 
-
-import com.dat3m.dartagnan.program.analysis.ReachingDefinitionsAnalysis;
 import com.dat3m.dartagnan.verification.Context;
-import com.dat3m.dartagnan.expression.BinaryExpression;
+import com.dat3m.dartagnan.expression.integers.IntSizeCast;
 import com.dat3m.dartagnan.expression.Expression;
-import com.dat3m.dartagnan.expression.integers.IntBinaryExpr;
-import com.dat3m.dartagnan.expression.integers.IntBinaryOp;
-import com.dat3m.dartagnan.expression.integers.IntLiteral;
+import com.dat3m.dartagnan.program.event.core.Init;
 import com.dat3m.dartagnan.program.Function;
 import com.dat3m.dartagnan.program.Program;
 import com.dat3m.dartagnan.program.Register;
 import com.dat3m.dartagnan.program.Thread;
 import com.dat3m.dartagnan.program.event.Event;
 import com.dat3m.dartagnan.program.event.RegWriter;
-import com.dat3m.dartagnan.program.event.RegReader;
 import com.dat3m.dartagnan.program.event.core.*;
-import com.dat3m.dartagnan.program.event.metadata.MemoryOrder;
 import org.sosy_lab.common.configuration.Configuration;
 
-import java.util.Set;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Queue;
-import java.util.LinkedList;
+import java.util.*;
+
 /*
  * Forward Interval analysis
  * Computes the intervals of variables in the program.
@@ -37,10 +30,12 @@ import java.util.LinkedList;
  */
 public class IntervalAnalysis {
 
+    Collection<Register> allRegisters;
 
+    private Thread currentThread;
+    private Event finalEvent;
     Map<Event,Map<Register,Interval>> eventToIntervals = new HashMap<>();
-    public Map<Register,Interval> finalIntervals = new HashMap();
-
+    public Map<Register,Interval> finalIntervals = new HashMap<>();
     private AliasAnalysis aliasAnalysis;
     public Map<Integer,Map<String,Interval>> getIntervalMap() {
         Map<Integer,Map<Register,Interval>> idsToIntervalMaps = transformKeys(eventToIntervals, Event::getGlobalId);
@@ -51,7 +46,7 @@ public class IntervalAnalysis {
 
         return idsToIntervalMapsString;
     }
-
+	
     private <T,C,M> Map<T,M> transformKeys(Map<C,M> registerIntervalMap, java.util.function.Function<C,T> transformer) {
         Map<T,M> result = new HashMap<>();
         for (var entry : registerIntervalMap.entrySet()) {
@@ -61,6 +56,30 @@ public class IntervalAnalysis {
         return result;
     }
 
+    public void computeAnalysisMetrics() {
+        // Iterate over all registers
+        // For each register check if their bound is reduced
+        // numbers such as reduced and not reduced and print at the end
+        double regReduced = 0.0;
+        double regTop = 0.0;
+        double regTotal = allRegisters.size();
+	Map<Register,Interval> reducedRegisters = new HashMap<>();
+        logger.debug("Computing regular interval metrics for thread: {}", currentThread);
+        for(Register r : allRegisters) {
+            Interval interval = eventToIntervals.get(finalEvent).get(r);
+	    if (interval != null) {
+            if(interval.isTop()) regTop++; else {regReduced++; reducedRegisters.put(r,interval);}
+	    } else {
+		    regTotal--;
+	    }
+	}
+	System.out.println("==============Interval Analysis Summary====================");
+        System.out.println("#Regs: " + regTotal);
+        System.out.println("#Bounds reduced: " + regReduced);
+        System.out.println("#Bounds top: " + regTop);
+        System.out.println("Registers reduced:  "+ reducedRegisters);
+	System.out.println("==============Interval Analysis Summary End====================");
+    }
 
     class IntervalInfo {
 	    public Register reg;
@@ -77,6 +96,29 @@ public class IntervalAnalysis {
                     "reg=" + reg +
                     ", interval=" + interval +
                     '}';
+        }
+    }
+
+    static Logger logger = LogManager.getLogger(IntervalAnalysis.class);
+
+    public static IntervalAnalysis fromConfigPatterson(Program program, Context analysisContext, Configuration config) {
+        IntervalAnalysis analysis = new IntervalAnalysis();
+        analysis.aliasAnalysis = analysisContext.get(AliasAnalysis.class);
+        long t0 = System.currentTimeMillis();
+        analysis.computeIntervalsPatterson(program);
+        long t1 = System.currentTimeMillis();
+        logger.info("Finished interval analysis in {}", Utils.toTimeString(t1 - t0));
+        return analysis;
+    }
+
+    private void computeIntervalsPatterson(Program program) {
+        for(Thread thread : program.getThreads()) {
+	if(!(thread.getEntry().getSuccessor() instanceof Init)) {
+	    currentThread = thread;
+        allRegisters = thread.getRegisters();
+        computeIntervalsPatterson(thread);
+	    computeAnalysisMetrics();
+        }
         }
     }
 
@@ -165,6 +207,30 @@ public class IntervalAnalysis {
 
     }
 
+
+
+    private Interval evaluateExpressionToInterval(Expression expr, Map<Register,Interval> prevIntervals) {
+        if(expr instanceof IntLiteral lit) {
+            return Interval.makeDefault(lit.getValueAsInt());
+        } else if (expr instanceof Register reg) {
+            Interval interval = prevIntervals.getOrDefault(reg,Interval.getTop());
+            return interval;
+        } else if (expr instanceof IntBinaryExpr binExpr){
+            IntBinaryOp op = binExpr.getKind();
+            Interval interval = evaluateExpressionToInterval(binExpr.getLeft(),prevIntervals);
+            // TODO: Support more operations such as comparisons
+            Interval newInterval = interval.applyOperator(op,getInterval(binExpr.getRight(),prevIntervals));
+	        return newInterval;
+        }
+
+	return Interval.getTop();
+
+
+
+    }
+
+
+
     private IntervalInfo computeExpressionInterval(Register register,Expression expr,Map<Register,Interval> prevIntervals) {
         IntervalInfo info = null;
         if(expr instanceof IntLiteral lit) {
@@ -175,34 +241,20 @@ public class IntervalAnalysis {
     return info;
     }
 
+	
+    private Interval.IntervalPair calculateRestriction(Register reg, IntCmpOp op, Expression restrictingExpr, Map<Register,Interval> prevIntervals) {
+        Interval resultingInterval = evaluateExpressionToInterval(restrictingExpr,prevIntervals);
+        // TODO: Deal with comparisons
+        Interval registerInterval = getInterval(reg,prevIntervals);
+        return registerInterval.evaluateComparison(op,resultingInterval);
 
 
-    static Logger logger = LogManager.getLogger(IntervalAnalysis.class);
-
-    public static IntervalAnalysis fromConfigPatterson(Program program, Context analysisContext, Configuration config) {
-        IntervalAnalysis analysis = new IntervalAnalysis();
-        analysis.aliasAnalysis = analysisContext.get(AliasAnalysis.class);
-        long t0 = System.currentTimeMillis();
-        analysis.computeIntervalsPatterson(program);
-	long t1 = System.currentTimeMillis();
-        logger.info("Finished interval analysis in {}", Utils.toTimeString(t1 - t0));
-        logger.info(analysis.eventToIntervals);
-        return analysis;
-
-   }
-
-
-
-    private void computeIntervalsPatterson(Program program) {
-        for(Thread thread : program.getThreads()) {
-            computeIntervalsPatterson(thread);
-        }
-    }
+     }
 
 	//TODO:  Documentation and credits
 private void computeIntervalsPatterson(Function function) {
 	
-	Queue<Event> flowList = new LinkedList();
+	Queue<Event> flowList = new LinkedList<>();
 	flowList.add(function.getEntry().getSuccessor());
 	eventToIntervals.put(function.getEntry().getSuccessor(),new HashMap());
         while(!flowList.isEmpty()) {
@@ -225,10 +277,15 @@ private void computeIntervalsPatterson(Function function) {
 		 } if (rw instanceof Load ld) {
 			 info = new IntervalInfo(ld.getResultRegister(), Interval.getTop());
 		 }
-
-
+		 if (rw instanceof ThreadArgument ta) {
+                     Expression arg = ta.getCreator().getArguments().get(ta.getIndex());
+                     if (arg instanceof IntLiteral lit) {
+                         Register result = ta.getResultRegister();
+                         info = addOperatorExprRec(result,lit,prevIntervals);
+                     }
+                 }
+		 
 	     }
-
 
 	     if (info != null) {
 		     prevIntervals.put(info.reg,info.interval);
@@ -254,6 +311,47 @@ private void computeIntervalsPatterson(Function function) {
 			     if (!flowList.contains(successor)) flowList.add(successor);
 			     Map<Register,Interval> successorIntervals = eventToIntervals.getOrDefault(successor,new HashMap<>());
 
+                 if (cj.getGuard() instanceof IntCmpExpr cmp) {
+                     Interval.IntervalPair pair= null;
+                     Expression left = cmp.getLeft();
+                     Expression right = cmp.getRight();
+		     logger.debug(left.getClass());
+                     if(left instanceof Register r) {
+                         pair = calculateRestriction(r,cmp.getKind(),right,currentIntervals);
+			 if(pair != null) pair.reg = r;
+                         
+		     } else if (left instanceof IntSizeCast c) {
+			Expression operand = c.getOperand();
+			if (operand instanceof Register r) {	
+                         pair = calculateRestriction(r,cmp.getKind(),right,currentIntervals);
+			 if(pair != null) pair.reg = r;
+			}
+		     }
+			
+		     if(pair != null) {
+		         logger.debug(pair);
+			 Map<Register,Interval>  trueIntervals = new HashMap<>(currentIntervals);
+                         Map<Register,Interval>  falseIntervals = new HashMap<>(currentIntervals);
+			 Register r = pair.reg;
+                         trueIntervals.put(r,pair.left);
+                         falseIntervals.put(r,pair.right);
+			 
+		         logger.debug(trueIntervals);
+                         eventToIntervals.put(l,joinIntervals(trueIntervals,labelIntervals));
+			 logger.debug(successorIntervals);
+                         eventToIntervals.put(successor,joinIntervals(falseIntervals,successorIntervals));
+		     } else {
+			 eventToIntervals.put(l,joinIntervals(currentIntervals,labelIntervals));
+                         eventToIntervals.put(successor,joinIntervals(currentIntervals,successorIntervals));
+
+		     }
+
+
+                 }
+
+
+
+
 			     eventToIntervals.put(l,joinIntervals(currentIntervals,labelIntervals));
 			     eventToIntervals.put(successor,joinIntervals(currentIntervals,successorIntervals));
 		     }
@@ -267,6 +365,9 @@ private void computeIntervalsPatterson(Function function) {
 		     Map<Register,Interval> successorIntervals = eventToIntervals.getOrDefault(successor,new HashMap<>());
 		     eventToIntervals.put(successor,joinIntervals(currentIntervals,successorIntervals));
 		     }
+             else  {
+		 finalEvent = current;
+             }
 	     }
 
         }
