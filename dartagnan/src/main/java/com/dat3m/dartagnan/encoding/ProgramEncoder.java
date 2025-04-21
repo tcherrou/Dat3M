@@ -28,10 +28,7 @@ import org.apache.logging.log4j.Logger;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
 import org.sosy_lab.common.configuration.Option;
 import org.sosy_lab.common.configuration.Options;
-import org.sosy_lab.java_smt.api.BooleanFormula;
-import org.sosy_lab.java_smt.api.BooleanFormulaManager;
-import org.sosy_lab.java_smt.api.Formula;
-import org.sosy_lab.java_smt.api.IntegerFormulaManager;
+import org.sosy_lab.java_smt.api.*;
 import org.sosy_lab.java_smt.api.NumeralFormula.IntegerFormula;
 
 import java.math.BigInteger;
@@ -86,7 +83,6 @@ public class ProgramEncoder implements Encoder {
 
     public BooleanFormula encodeFullProgram() {
         return context.getBooleanFormulaManager().and(
-		        encodeBounds(),
                 encodeControlBarriers(),
                 encodeNamedControlBarriers(),
                 encodeConstants(),
@@ -94,7 +90,9 @@ public class ProgramEncoder implements Encoder {
                 encodeControlFlow(),
                 encodeFinalRegisterValues(),
                 encodeFilter(),
-                encodeDependencies());
+                encodeDependencies(),
+		encodeBounds()
+		);
     }
 
     public BooleanFormula encodeConstants() {
@@ -647,22 +645,34 @@ public class ProgramEncoder implements Encoder {
 // ============= Bounds =============
 //
 public BooleanFormula encodeBounds() {
-	Map<BitvectorFormula,Interval> bvToInterval = context.bvToInterval;
+	Map<Formula,Interval> bvToInterval = context.bvToInterval;
 	FormulaManager fmgr = context.getFormulaManager();
 	BitvectorFormulaManager bvmgr = fmgr.getBitvectorFormulaManager();
+    IntegerFormulaManager imgr = fmgr.getIntegerFormulaManager();
 	ArrayList<BooleanFormula> enc = new ArrayList<>();
 	for(var entry : bvToInterval.entrySet()) {
-		BitvectorFormula variable = entry.getKey();
-		Interval interval = entry.getValue();
-		int upperBound = interval.upperBound;
-		int lowerBound = interval.lowerBound;
-		if(!(interval.isTop())) {
-			BooleanFormula constraintLTE = context.encodeComparison(IntCmpOp.LTE,variable,bvmgr.makeBitvector(bvmgr.getLength(variable), upperBound));
-			BooleanFormula constraintGTE = context.encodeComparison(IntCmpOp.GTE,variable,bvmgr.makeBitvector(bvmgr.getLength(variable), lowerBound));
-			enc.add(constraintLTE);
-			enc.add(constraintGTE);
-	}
-	}
+        Formula key = entry.getKey();
+        Interval interval = entry.getValue();
+        if (key instanceof BitvectorFormula variable) {
+            int upperBound = interval.upperBound;
+            int lowerBound = interval.lowerBound;
+            if (!(interval.isTop())) {
+                BooleanFormula constraintLTE = context.encodeComparison(IntCmpOp.LTE, variable, bvmgr.makeBitvector(bvmgr.getLength(variable), upperBound));
+                BooleanFormula constraintGTE = context.encodeComparison(IntCmpOp.GTE, variable, bvmgr.makeBitvector(bvmgr.getLength(variable), lowerBound));
+                enc.add(constraintLTE);
+                enc.add(constraintGTE);
+            }
+        } else if (key instanceof IntegerFormula variable) {
+            int upperBound = interval.upperBound;
+            int lowerBound = interval.lowerBound;
+            if (!(interval.isTop())) {
+                BooleanFormula constraintLTE = context.encodeComparison(IntCmpOp.LTE, variable, imgr.makeNumber(upperBound));
+                BooleanFormula constraintGTE = context.encodeComparison(IntCmpOp.GTE, variable, imgr.makeNumber(lowerBound));
+                enc.add(constraintLTE);
+                enc.add(constraintGTE);
+            }
+        }
+    }
 	return context.getBooleanFormulaManager().and(enc);
 	
 

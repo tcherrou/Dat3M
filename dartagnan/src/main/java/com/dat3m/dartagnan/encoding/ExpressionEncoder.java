@@ -336,14 +336,14 @@ class ExpressionEncoder implements ExpressionVisitor<Formula> {
                 reg.getName() + "(" + event.getGlobalId() + ")";
         Type type = reg.getType();
         Formula variable = context.makeVariable(name, type);
-        if (variable instanceof BitvectorFormula bv && event != null) {
+        if ((variable instanceof BitvectorFormula || variable instanceof IntegerFormula) && event != null) {
             int id = event.getGlobalId();
 
             IntervalAnalysis intervalAnalysis = context.getAnalysisContext().get(IntervalAnalysis.class);
             Map<Integer, Map<String, Interval>> intervalMap = intervalAnalysis.getIntervalMap();
             Map<String, Interval> nameToInterval = intervalMap.getOrDefault(id, new HashMap<>());
             Interval interval = nameToInterval.getOrDefault(reg.getName(), Interval.getTop());
-            context.bvToInterval.put(bv, interval);
+            context.bvToInterval.put(variable, interval);
         }
         return variable;
     }

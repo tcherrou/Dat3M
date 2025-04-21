@@ -84,7 +84,7 @@ public final class EncodingContext {
     private final Map<Event, Formula> results = new HashMap<>();
     private final Map<MemoryObject, Formula> objAddress = new HashMap<>();
     private final Map<MemoryObject, Formula> objSize = new HashMap<>();
-    final Map<BitvectorFormula,Interval> bvToInterval = new HashMap<>();
+    final Map<Formula,Interval> bvToInterval = new HashMap<>();
 
     private EncodingContext(VerificationTask t, Context a, FormulaManager m) {
         verificationTask = checkNotNull(t);
