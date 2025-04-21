@@ -49,7 +49,7 @@ public class Interval {
     }
 
     public Interval join(Interval interval2) {
-        return new Interval(Integer.min(this.lowerBound,interval2.lowerBound),Integer.max(this.upperBound,interval2.lowerBound));    }
+        return new Interval(Integer.min(this.lowerBound,interval2.lowerBound),Integer.max(this.upperBound,interval2.upperBound));    }
 
     public boolean isTop() {
 	    return this.equals(Interval.getTop());
