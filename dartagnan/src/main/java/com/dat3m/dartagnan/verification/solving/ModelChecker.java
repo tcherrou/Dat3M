@@ -21,6 +21,8 @@ import com.dat3m.dartagnan.wmm.axiom.Axiom;
 import com.dat3m.dartagnan.wmm.processing.WmmProcessingManager;
 import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
+import org.sosy_lab.common.configuration.Option;
+import org.sosy_lab.common.configuration.Options;
 import org.sosy_lab.java_smt.api.Model;
 import org.sosy_lab.java_smt.api.ProverEnvironment;
 import org.sosy_lab.java_smt.api.SolverException;
@@ -87,7 +89,6 @@ public abstract class ModelChecker {
         analysisContext.register(ReachingDefinitionsAnalysis.class, ReachingDefinitionsAnalysis.fromConfig(program, analysisContext, config));
         analysisContext.register(AliasAnalysis.class, AliasAnalysis.fromConfig(program, analysisContext, config));
         analysisContext.register(ThreadSymmetry.class, ThreadSymmetry.fromConfig(program, config));
-        analysisContext.register(IntervalAnalysis.class,IntervalAnalysis.fromConfigPatterson(program,analysisContext,config));
 
         for(Thread thread : program.getThreads()) {
             for(Event e : thread.getEvents()) {
@@ -110,6 +111,22 @@ public abstract class ModelChecker {
     public static void performStaticWmmAnalyses(VerificationTask task, Context analysisContext, Configuration config) throws InvalidConfigurationException {
         analysisContext.register(WmmAnalysis.class, WmmAnalysis.fromConfig(task.getMemoryModel(), task.getProgram().getArch(), config));
         analysisContext.register(RelationAnalysis.class, RelationAnalysis.fromConfig(task, analysisContext, config));
+        //analysisContext.register(IntervalAnalysis.class,IntervalAnalysis.fromConfigPatterson(task.getProgram(),analysisContext,task,config));
+    }
+
+    /**
+     * Performs interval analysis.
+     * TODO: Find a cleaner way to do this since IntervalAnalysis depends on RelationalAnalysis.
+     * @param task Program, target memory model and property to be checked.
+     * @param analysisContext Collection of static analyses already performed for this task.
+     *                        Also receives the results.
+     * @param config User-defined options to further specify the behavior.
+     * @exception InvalidConfigurationException Some user-defined option does not match the format.
+     * @exception UnsatisfiedRequirementException Some static analysis is missing.
+     */
+
+    public static void performIntervalAnalysis(VerificationTask task, Context analysisContext, Configuration config) throws InvalidConfigurationException {
+        analysisContext.register(IntervalAnalysis.class,IntervalAnalysis.fromConfig(task.getProgram(),analysisContext,task,config));
     }
 
     protected void saveFlaggedPairsOutput(Wmm wmm, WmmEncoder encoder, ProverEnvironment prover, EncodingContext ctx, Program program) throws SolverException {

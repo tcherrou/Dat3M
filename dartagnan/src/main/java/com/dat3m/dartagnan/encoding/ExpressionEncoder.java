@@ -25,8 +25,7 @@ import org.sosy_lab.java_smt.api.*;
 import org.sosy_lab.java_smt.api.NumeralFormula.IntegerFormula;
 
 import java.math.BigInteger;
-import java.util.HashMap;
-import java.util.Map;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import java.util.ArrayList;
@@ -336,14 +335,13 @@ class ExpressionEncoder implements ExpressionVisitor<Formula> {
                 reg.getName() + "(" + event.getGlobalId() + ")";
         Type type = reg.getType();
         Formula variable = context.makeVariable(name, type);
-        if ((variable instanceof BitvectorFormula || variable instanceof IntegerFormula) && event != null) {
-            int id = event.getGlobalId();
-
-            IntervalAnalysis intervalAnalysis = context.getAnalysisContext().get(IntervalAnalysis.class);
-            Map<Integer, Map<String, Interval>> intervalMap = intervalAnalysis.getIntervalMap();
-            Map<String, Interval> nameToInterval = intervalMap.getOrDefault(id, new HashMap<>());
-            Interval interval = nameToInterval.getOrDefault(reg.getName(), Interval.getTop());
-            context.bvToInterval.put(variable, interval);
+        IntervalAnalysis intervalAnalysis = context.getAnalysisContext().get(IntervalAnalysis.class);
+        // Save the bound of a register in a map to encode it later.
+        if ((variable instanceof BitvectorFormula || variable instanceof IntegerFormula) && event != null && intervalAnalysis != null) {
+            Interval interval = intervalAnalysis.getIntervalAt(event,reg);
+            if(interval != null) {
+                 context.bvToInterval.put(variable, interval);
+            }
         }
         return variable;
     }

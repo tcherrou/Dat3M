@@ -51,6 +51,7 @@ public class DataRaceSolver extends ModelChecker {
         preprocessMemoryModel(task, config);
         performStaticProgramAnalyses(task, analysisContext, config);
         performStaticWmmAnalyses(task, analysisContext, config);
+        performIntervalAnalysis(task,analysisContext,config);
 
         context = EncodingContext.of(task, analysisContext, ctx.getFormulaManager());
         ProgramEncoder programEncoder = ProgramEncoder.withContext(context);

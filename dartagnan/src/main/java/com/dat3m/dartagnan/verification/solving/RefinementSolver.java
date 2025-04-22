@@ -213,7 +213,7 @@ public class RefinementSolver extends ModelChecker {
         // Copy context without WMM analyses because we want to analyse a second model later
         Context baselineContext = Context.createCopyFrom(analysisContext);
         performStaticWmmAnalyses(task, analysisContext, config);
-
+        performIntervalAnalysis(task,analysisContext,config);
         // Encoding context with the original Wmm and the analysis context for relation extraction.
         contextWithFullWmm = EncodingContext.of(task, analysisContext, ctx.getFormulaManager());
 
@@ -232,7 +232,7 @@ public class RefinementSolver extends ModelChecker {
         performStaticWmmAnalyses(baselineTask, baselineContext, config);
 
         // ------------------------ Encoding ------------------------
-
+        performIntervalAnalysis(baselineTask,baselineContext,config);
         context = EncodingContext.of(baselineTask, baselineContext, ctx.getFormulaManager());
         final ProgramEncoder programEncoder = ProgramEncoder.withContext(context);
         final PropertyEncoder propertyEncoder = PropertyEncoder.withContext(context);

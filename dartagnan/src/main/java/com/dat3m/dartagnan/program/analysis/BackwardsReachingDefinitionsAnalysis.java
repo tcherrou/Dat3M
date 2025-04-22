@@ -39,7 +39,7 @@ import java.util.Set;
  * that is, backward jumps cause re-evaluation of the loop body until convergence.
  * This results in a squared worst-case time complexity in terms of events being processed.
  */
-class BackwardsReachingDefinitionsAnalysis implements ReachingDefinitionsAnalysis {
+public class BackwardsReachingDefinitionsAnalysis implements ReachingDefinitionsAnalysis {
 
     private final Map<RegReader, ReaderInfo> readerMap = new HashMap<>();
     private final Map<RegWriter, Readers> writerMap = new HashMap<>();

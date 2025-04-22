@@ -83,6 +83,7 @@ public class ProgramEncoder implements Encoder {
 
     public BooleanFormula encodeFullProgram() {
         return context.getBooleanFormulaManager().and(
+                encodeBounds(),
                 encodeControlBarriers(),
                 encodeNamedControlBarriers(),
                 encodeConstants(),
@@ -90,8 +91,7 @@ public class ProgramEncoder implements Encoder {
                 encodeControlFlow(),
                 encodeFinalRegisterValues(),
                 encodeFilter(),
-                encodeDependencies(),
-		encodeBounds()
+                encodeDependencies()
 		);
     }
 
@@ -645,32 +645,30 @@ public class ProgramEncoder implements Encoder {
 // ============= Bounds =============
 //
 public BooleanFormula encodeBounds() {
+
 	Map<Formula,Interval> bvToInterval = context.bvToInterval;
-	FormulaManager fmgr = context.getFormulaManager();
+    FormulaManager fmgr = context.getFormulaManager();
 	BitvectorFormulaManager bvmgr = fmgr.getBitvectorFormulaManager();
     IntegerFormulaManager imgr = fmgr.getIntegerFormulaManager();
 	ArrayList<BooleanFormula> enc = new ArrayList<>();
 	for(var entry : bvToInterval.entrySet()) {
         Formula key = entry.getKey();
         Interval interval = entry.getValue();
+        // Encode bounds in the SMT encoding using bitvectors or integers.
         if (key instanceof BitvectorFormula variable) {
-            int upperBound = interval.upperBound;
-            int lowerBound = interval.lowerBound;
-            if (!(interval.isTop())) {
+            long upperBound = interval.upperBound;
+            long lowerBound = interval.lowerBound;
                 BooleanFormula constraintLTE = context.encodeComparison(IntCmpOp.LTE, variable, bvmgr.makeBitvector(bvmgr.getLength(variable), upperBound));
                 BooleanFormula constraintGTE = context.encodeComparison(IntCmpOp.GTE, variable, bvmgr.makeBitvector(bvmgr.getLength(variable), lowerBound));
                 enc.add(constraintLTE);
                 enc.add(constraintGTE);
-            }
         } else if (key instanceof IntegerFormula variable) {
-            int upperBound = interval.upperBound;
-            int lowerBound = interval.lowerBound;
-            if (!(interval.isTop())) {
+            long upperBound = interval.upperBound;
+            long lowerBound = interval.lowerBound;
                 BooleanFormula constraintLTE = context.encodeComparison(IntCmpOp.LTE, variable, imgr.makeNumber(upperBound));
                 BooleanFormula constraintGTE = context.encodeComparison(IntCmpOp.GTE, variable, imgr.makeNumber(lowerBound));
                 enc.add(constraintLTE);
                 enc.add(constraintGTE);
-            }
         }
     }
 	return context.getBooleanFormulaManager().and(enc);
