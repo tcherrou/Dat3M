@@ -19,11 +19,10 @@ RUN apt-get update && \
     apt-get install -y tmux
 
 # Install Dat3M
-COPY . home/Dat3M
-RUN cd home/Dat3M && \
-    mvn clean install -DskipTests
-# RUN git clone --branch master https://github.com/tcherrou/Dat3M.git && \
-# RUN cd home/Dat3M && \
+RUN cd home && \
+ git clone --branch IntervalAnalysis https://github.com/tcherrou/Dat3M.git && \
+ cd Dat3M && \
+ mvn clean install -DskipTests
 
 # symlink for clang
 RUN ln -s clang-12 /usr/bin/clang
