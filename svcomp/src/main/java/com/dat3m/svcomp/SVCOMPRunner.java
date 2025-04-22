@@ -9,6 +9,7 @@ import com.google.common.io.Files;
 import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.configuration.Option;
 import org.sosy_lab.common.configuration.Options;
+import com.dat3m.dartagnan.utils.ExitCode;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -26,6 +27,7 @@ import static com.dat3m.dartagnan.configuration.OptionInfo.collectOptions;
 import static com.dat3m.dartagnan.configuration.OptionNames.*;
 import static com.dat3m.dartagnan.witness.graphml.GraphAttributes.UNROLLBOUND;
 import static java.lang.Integer.parseInt;
+import static com.dat3m.dartagnan.utils.ExitCode.*;
 
 @Options
 public class SVCOMPRunner extends BaseOptions {
@@ -42,6 +44,8 @@ public class SVCOMPRunner extends BaseOptions {
         //TODO process the property file instead of assuming its contents based of its name
         if(p.contains("no-data-race")) {
             property = Property.DATARACEFREEDOM;
+        } else if(p.contains("termination")) {
+            property = Property.TERMINATION;
         } else if(p.contains("unreach-call") || p.contains("no-overflow") || p.contains("valid-memsafety")) {
             property = Property.PROGRAM_SPEC;
         } else {
@@ -94,7 +98,8 @@ public class SVCOMPRunner extends BaseOptions {
         if(r.witnessPath != null) {
             witness = new ParserWitness().parse(new File(r.witnessPath));
             if(!fileProgram.getName().equals(Paths.get(witness.getProgram()).getFileName().toString())) {
-                throw new RuntimeException("The witness was generated from a different program than " + fileProgram);
+                System.out.println("The witness was generated from a different program than " + fileProgram);
+                System.exit(WRONG_WITNESS_FILE.asInt());
             }
         }
 
@@ -104,7 +109,7 @@ public class SVCOMPRunner extends BaseOptions {
         while(output.equals("UNKNOWN")) {
             ArrayList<String> cmd = new ArrayList<>();
             cmd.add("java");
-            cmd.add("-Dlog4j.configurationFile=" + System.getenv().get("DAT3M_HOME") + "/dartagnan/src/main/resources/log4j2.xml");
+            cmd.add("-Dlog4j.configurationFile=" + System.getenv().get("DAT3M_HOME") + "/dartagnan/src/main/resources/info.xml");
             cmd.add("-DLOGNAME=" + Files.getNameWithoutExtension(programPath));
             cmd.addAll(Arrays.asList("-jar", System.getenv().get("DAT3M_HOME") + "/dartagnan/target/dartagnan.jar"));
             cmd.add(fileModel.toString());
@@ -131,13 +136,6 @@ public class SVCOMPRunner extends BaseOptions {
                     }
                     output = next;
                     System.out.println(output);
-                }
-                if(proc.exitValue() == 1) {
-                    BufferedReader error = new BufferedReader(new InputStreamReader(proc.getErrorStream()));
-                    while(error.ready()) {
-                        System.out.println(error.readLine());
-                    }
-                    System.exit(0);
                 }
             } catch(Exception e) {
                 System.out.println(e.getMessage());
