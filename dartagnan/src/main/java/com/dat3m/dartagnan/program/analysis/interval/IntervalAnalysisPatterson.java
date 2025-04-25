@@ -44,7 +44,6 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
     private Event finalEvent;
     private final Queue<Event> dataflowWorkList = new LinkedList<>();
     Map<Event,Map<Register,Interval>> eventToIntervals = new HashMap<>();
-    public Map<Register,Interval> finalIntervals = new HashMap<>();
 
     private RelationAnalysis relationAnalysis;
     private AliasAnalysis aliasAnalysis;
@@ -104,7 +103,7 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 	    analysis.aliasAnalysis = analysisContext.get(AliasAnalysis.class);
         analysis.reachingDefinitionsAnalysis =(BackwardsReachingDefinitionsAnalysis) analysisContext.get(ReachingDefinitionsAnalysis.class);
 	    analysis.task = task;
-        analysis.program = program;;
+        analysis.program = program;
         analysis.computeIntervalsPatterson(program);
         return analysis;
     }
@@ -156,7 +155,6 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 
         for(var pair : lessIntervals.entrySet()) {
             Register key = pair.getKey();
-            Interval interval = pair.getValue();
             if(moreIntervals.containsKey(key)) {
                 // Join same registers
                 lessIntervals.replace(key,pair.getValue().join(moreIntervals.get(key)));
@@ -183,7 +181,7 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
     }
 
     private IntervalInfo addOperatorExprRec(Register register, Expression expr,Map<Register,Interval> prevIntervals) {
-        IntervalInfo info = null;
+        IntervalInfo info;
 
         if(expr instanceof IntLiteral lit) {
 
@@ -256,69 +254,37 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 
 
     }
-	
-	// Calculate whether a register contains the address to which the store is writing from.
-    // TODO: Revise this step
-    private boolean usesSameAddress(Store s,Register origReg) {
-		    Set<Register> writers = reachingDefinitionsAnalysis.getWriters(s).getUsedRegisters();
-		    if (writers.size() == 1) {
-			    List<Register> registers = new ArrayList<>(writers);
-			    Register reg = registers.get(0);
-			    List<RegWriter> events =  reachingDefinitionsAnalysis.getWriters(s).ofRegister(reg).getMayWriters();
-			    if(events.size() == 1 && reg == origReg) {
-				    RegWriter rw = events.get(0);
-				    if(rw instanceof Load l) {
-					    return l.getAddress() == s.getAddress();
-				    }
-			    }
-
-		    }
-	    return false;
-    }
 
 
-    
     // Calculate the interval of a memory address.
     // Takes into account all stores from a load can read from
     // Start at the initial store (if it has any).
     // Arrays not supported.
     private Interval calculatePossibleInterval(Set<Store> stores, Register r) {
-	Interval interval = null;
-	Init initStore = null;
-	int initStoreCount = 0;
-	for (Store s : stores) {
-		if(s instanceof Init i) {
-			initStore = i;
-			initStoreCount++;
-		}
-	}
-	if(initStoreCount > 1 || initStoreCount == 0) return Interval.getTop(  r.getType());
-    Expression initValue = initStore.getMemValue();
-    interval = evaluateStoreExpressionToInterval(initValue,r,interval,initStore,new HashMap<>());
-    if (stores.remove(initStore)) {
-	for (Store s : stores) {
-		Map<Register,Interval> prevIntervals = eventToIntervals.getOrDefault(s,new HashMap<>());
-		Expression address = s.getAddress();
-		Expression value = s.getMemValue();
-		Interval newInterval = evaluateStoreExpressionToInterval(value,r,interval,s,prevIntervals);
-		interval = interval.join(newInterval);
-	}
-	}
-	return interval;
+        Interval interval = null;
+            for (Store s : stores) {
+                Map<Register,Interval> prevIntervals = eventToIntervals.getOrDefault(s,new HashMap<>());
+                Expression value = s.getMemValue();
+                Interval newInterval = evaluateStoreExpressionToInterval(value,r,prevIntervals);
+                interval = interval == null ? newInterval : interval.join(newInterval);
+            }
+        return interval;
     }
+
+
     // TODO: Potential code duplication with evaluateExpressionToInterval
-    private Interval evaluateStoreExpressionToInterval(Expression expr,Register r,Interval interval,Store s, Map<Register,Interval> prevIntervals) {
+    private Interval evaluateStoreExpressionToInterval(Expression expr,Register r,Map<Register,Interval> prevIntervals) {
 	    if(expr instanceof IntLiteral lit) {
 		    return Interval.makeDefault(lit.getValueAsInt());
-	    } else if (expr instanceof Register reg && usesSameAddress(s,reg)) {
-		    return  interval;
+	    } else if (expr instanceof Register reg) {
+		    return  prevIntervals.getOrDefault(reg,Interval.getTop(  reg.getType()));
 		    }  else if (expr instanceof IntSizeCast cast){
-		     return evaluateStoreExpressionToInterval(cast.getOperand(),r,interval,s,prevIntervals);
+		     return evaluateStoreExpressionToInterval(cast.getOperand(),r,prevIntervals);
     } else if (expr instanceof IntBinaryExpr binExpr){
 	    Expression left = binExpr.getLeft();
 	    Expression right = binExpr.getRight();
-	    Interval newIntervalLeft = evaluateStoreExpressionToInterval(left,r,interval,s,prevIntervals);
-	    Interval newIntervalRight = evaluateStoreExpressionToInterval(right,r,interval,s,prevIntervals);
+	    Interval newIntervalLeft = evaluateStoreExpressionToInterval(left,r,prevIntervals);
+	    Interval newIntervalRight = evaluateStoreExpressionToInterval(right,r,prevIntervals);
 	    IntBinaryOp op = binExpr.getKind();
 	    return newIntervalLeft.applyOperator(op,newIntervalRight,  r.getType());
     }
@@ -452,15 +418,25 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 
     }
 
+
     private void updateIntervals(Event current,IntervalInfo info, Map<Register,Interval> prevIntervals) {
 		prevIntervals.put(info.reg,info.interval);
                 eventToIntervals.put(current,prevIntervals);
     }
 
+    private void propagateNewIntervalToEvents(Collection<? extends Event> events,IntervalInfo info) {
+        for(Event event : events) {
+            Map<Register,Interval> newIntervals = new HashMap<>(eventToIntervals.getOrDefault(event,new HashMap<>()));
+            newIntervals.replace(info.reg,info.interval);
+            eventToIntervals.replace(event,newIntervals);
+
+        }
+    }
+
     // Process dataflow of the whole program (mostly to deal with load and stores).
     private void processDataFlow(Queue<Event> dataflowList) {
 	    while(!dataflowList.isEmpty()) {
-		    IntervalInfo info = null;
+		    IntervalInfo info;
 		    Event current = dataflowList.remove();
 		    Map<Register,Interval> prevIntervals = new HashMap<>(eventToIntervals.get(current));
 		    if (current instanceof RegWriter rw) {
@@ -470,6 +446,9 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 				    if (!oldInterval.equals(info.interval)) {
 					    addReadersToDataFlowList(rw);
 					    updateIntervals(current,info,prevIntervals);
+                        propagateNewIntervalToEvents(reachingDefinitionsAnalysis.getReaders(rw).getReaders(),info);
+
+
 				    }
 			    } 
 		    } else if (current instanceof Store s) {
