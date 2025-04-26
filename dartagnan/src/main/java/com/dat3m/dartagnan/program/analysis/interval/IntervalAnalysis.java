@@ -29,7 +29,7 @@ public interface IntervalAnalysis {
 
         @Option(
                 name = INTERVAL_METHOD,
-                description = "Indicates how to compute itervals for registers.")
+                description = "Indicates how to compute intervals for registers.")
                 private IntervalOptions method = IntervalOptions.getDefault();
 
         Config(Configuration config) throws InvalidConfigurationException {
@@ -38,7 +38,7 @@ public interface IntervalAnalysis {
     }
 
 
-    public static IntervalAnalysis fromConfig(Program program, Context analysisContext, VerificationTask task, Configuration config) throws InvalidConfigurationException {
+    static IntervalAnalysis fromConfig(Program program, Context analysisContext, VerificationTask task, Configuration config) throws InvalidConfigurationException {
         Config c = new Config(config);
         logger.info("Selected interval analysis: {}", c.method);
         long t0 = System.currentTimeMillis();
@@ -53,5 +53,5 @@ public interface IntervalAnalysis {
 
 
 
-    public Interval getIntervalAt(Event event,Register r);
+    Interval getIntervalAt(Event event, Register r);
 }
