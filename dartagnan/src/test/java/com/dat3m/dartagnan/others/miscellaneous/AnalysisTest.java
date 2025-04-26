@@ -2,6 +2,7 @@ package com.dat3m.dartagnan.others.miscellaneous;
 
 import com.dat3m.dartagnan.configuration.Alias;
 import com.dat3m.dartagnan.configuration.Arch;
+import com.dat3m.dartagnan.configuration.IntervalOptions;
 import com.dat3m.dartagnan.configuration.ProgressModel;
 import com.dat3m.dartagnan.expression.Expression;
 import com.dat3m.dartagnan.expression.ExpressionFactory;
@@ -26,10 +27,12 @@ import com.dat3m.dartagnan.program.event.core.*;
 import com.dat3m.dartagnan.program.event.functions.Return;
 import com.dat3m.dartagnan.program.event.metadata.OriginalId;
 import com.dat3m.dartagnan.program.memory.MemoryObject;
+import com.dat3m.dartagnan.program.processing.DebugPrint;
 import com.dat3m.dartagnan.program.processing.LoopUnrolling;
 import com.dat3m.dartagnan.program.processing.MemoryAllocation;
 import com.dat3m.dartagnan.program.processing.ProcessingManager;
 import com.dat3m.dartagnan.program.processing.compilation.Compilation;
+import com.dat3m.dartagnan.utils.printer.Printer;
 import com.dat3m.dartagnan.verification.Context;
 import com.dat3m.dartagnan.verification.VerificationTask;
 import com.dat3m.dartagnan.wmm.Relation;
@@ -40,6 +43,7 @@ import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.EnumSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -723,4 +727,93 @@ public class AnalysisTest {
     private Event findMatchingEventAfterProcessing(Program p, Event orig) {
         return p.getThreadEvents().stream().filter(e -> e.hasEqualMetadata(orig, OriginalId.class)).findFirst().get();
     }
+
+    private IntervalAnalysis runIntervalAnalysis(Program p, IntervalOptions method) throws InvalidConfigurationException, IOException {
+        final String modelPath = "cat/c11.cat";
+        Configuration config = Configuration.builder()
+                .setOption(INTERVAL_METHOD,method.asStringOption())
+                .setOption(ENABLE_EXTENDED_RELATION_ANALYSIS, "false")
+                .build();
+        ProcessingManager.fromConfig(config).run(p);
+        final Wmm wmm = new ParserCat().parse(new File(getRootPath(modelPath)));
+        final VerificationTask task = VerificationTask.builder()
+                .withConfig(config)
+                .withBound(1)
+                .withTarget(Arch.C11)
+                .build(p, wmm, EnumSet.of(PROGRAM_SPEC));
+        wmm.configureAll(task.getConfig());
+        final Context context = Context.create();
+        performStaticProgramAnalyses(task,context,config);
+        performStaticWmmAnalyses(task,context,config);
+        performIntervalAnalysis(task,context,config);
+        return context.get(IntervalAnalysis.class);
+
+
+
+    }
+
+    @Test
+    public void intervalAnalysisTest() throws IOException, InvalidConfigurationException {
+        // Create sample program
+        ProgramBuilder b = ProgramBuilder.forLanguage(SourceLanguage.LITMUS);
+        MemoryObject x = b.newMemoryObject("x", 1);
+        MemoryObject y = b.newMemoryObject("y", 1);
+        x.setInitialValue(0, expressions.makeZero(types.getArchType()));
+        y.setInitialValue(0, expressions.makeZero(types.getArchType()));
+        b.newThread(0);
+        b.newThread(1);
+        b.newThread(2);
+        // Interval is TOP during local analysis and should become [0,3] after local analyses are done
+        Register r0 = b.getOrNewRegister(0,"r0");
+
+        // Interval is calculated by joining each store
+        Register r1 = b.getOrNewRegister(1,"r1");
+        Register r2 = b.getOrNewRegister(2,"r2");
+
+        // New load values propagated to RegReader
+        Register r4 = b.getOrNewRegister(0,"r4");
+
+        Local loc0 = newLocal(r4,r0);
+
+        Load l0 = newLoad(r0,x);
+        Load l1 = newLoad(r1,y);
+        Load l2 = newLoad(r2,y);
+
+
+        Store s0 = newStore(x,r1);
+        Store s1 = newStore(y,expressions.makeValue(1,types.getArchType()));
+        Store s2 = newStore(y,expressions.makeValue(2,types.getArchType()));
+        Store s3 = newStore(y,expressions.makeValue(3,types.getArchType()));
+
+
+        // T0
+        b.addChild(0,l0);
+        b.addChild(0,loc0);
+
+
+        // T1
+        b.addChild(1,l1);
+        b.addChild(1,s0);
+
+        // T2
+        b.addChild(2,l2);
+        b.addChild(2,s1);
+        b.addChild(2,s2);
+        b.addChild(2,s3);
+
+
+
+
+        Program p = b.build();
+        IntervalAnalysis analysis = runIntervalAnalysis(p,IntervalOptions.PATTERSON);
+        DebugPrint.withHeader("Test", Printer.Mode.THREADS).run(p);
+        assertEquals(new Interval(0,3), analysis.getIntervalAt(l0,r0));
+        assertEquals(new Interval(0,3), analysis.getIntervalAt(loc0,r4));
+        assertEquals(new Interval(0,3), analysis.getIntervalAt(l1,r1));
+        assertEquals(new Interval(0,0), analysis.getIntervalAt(l2,r2));
+
+
+
+    }
+
 }
