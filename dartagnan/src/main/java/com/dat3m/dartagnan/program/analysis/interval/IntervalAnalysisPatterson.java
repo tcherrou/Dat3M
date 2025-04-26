@@ -280,14 +280,15 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 			    Set<Store> stores = getPotentialStores(ld);
 			    Interval interval = calculatePossibleInterval(stores,rw.getResultRegister());
 			    info = new IntervalInfo(ld.getResultRegister(), interval);
-		    }
-		    if (rw instanceof ThreadArgument ta) {
+		    } else if (rw instanceof ThreadArgument ta) {
 			    Expression arg = ta.getCreator().getArguments().get(ta.getIndex());
 			    if (arg instanceof IntLiteral lit) {
 				    Register result = ta.getResultRegister();
 				    info = new IntervalInfo(result,evaluateExpressionToInterval(result,lit,prevIntervals));
 			    }
-		    }
+		    } else {
+                info = new IntervalInfo(rw.getResultRegister(),Interval.getTop(rw.getResultRegister().getType()));
+            }
 	    }
 	    return info;
     }
