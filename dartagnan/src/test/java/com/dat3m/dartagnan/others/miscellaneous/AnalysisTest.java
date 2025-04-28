@@ -44,6 +44,7 @@ import org.sosy_lab.common.configuration.InvalidConfigurationException;
 
 import java.io.File;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.util.EnumSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -807,10 +808,10 @@ public class AnalysisTest {
         Program p = b.build();
         IntervalAnalysis analysis = runIntervalAnalysis(p,IntervalOptions.PATTERSON);
         DebugPrint.withHeader("Test", Printer.Mode.THREADS).run(p);
-        assertEquals(new Interval(0,3), analysis.getIntervalAt(l0,r0));
-        assertEquals(new Interval(0,3), analysis.getIntervalAt(loc0,r4));
-        assertEquals(new Interval(0,3), analysis.getIntervalAt(l1,r1));
-        assertEquals(new Interval(0,0), analysis.getIntervalAt(l2,r2));
+        assertEquals(new Interval(BigInteger.ZERO,new BigInteger("3")), analysis.getIntervalAt(l0,r0));
+        assertEquals(new Interval(BigInteger.ZERO,new BigInteger("3")), analysis.getIntervalAt(loc0,r4));
+        assertEquals(new Interval(BigInteger.ZERO,new BigInteger("3")), analysis.getIntervalAt(l1,r1));
+        assertEquals(new Interval(BigInteger.ZERO,BigInteger.ZERO), analysis.getIntervalAt(l2,r2));
 
 
 
