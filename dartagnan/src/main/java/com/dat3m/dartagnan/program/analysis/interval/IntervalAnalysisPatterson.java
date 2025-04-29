@@ -229,16 +229,18 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 
     // Use the Relation Analysis to calculate the possible store from which a load can read from.
     private Set<Store> getPotentialStores(Load event) {
-        return (relationAnalysis.getKnowledge(task.getMemoryModel()
-                .getRelation(RF))
+        Set<Event> potentialStoreEvents = (relationAnalysis.getKnowledge(task.getMemoryModel()
+                        .getRelation(RF))
                 .getMaySet()
                 .getInMap()
-                .get(event))
-                .stream()
-                .map(e -> (Store) e)
-		        .collect(Collectors.toSet());
-    }
+                .get(event));
 
+        if (potentialStoreEvents != null) {
+            return potentialStoreEvents.stream()
+                    .map(e -> (Store) e)
+                    .collect(Collectors.toSet());
+        } else return Collections.emptySet();
+    }
     // Get loads that a store may influence.
     private Set<Load> getPotentialLoads(Store s) {
 	    Set<Load> loads = new HashSet<>();
@@ -257,12 +259,14 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
     // Join the intervals of all possible stores
     private Interval calculatePossibleInterval(Set<Store> stores, Register r) {
         Interval interval = null;
+        if (!stores.isEmpty()) {
             for (Store s : stores) {
-                Map<Register,Interval> prevIntervals = eventToIntervals.getOrDefault(s,new HashMap<>());
+                Map<Register, Interval> prevIntervals = eventToIntervals.getOrDefault(s, new HashMap<>());
                 Expression value = s.getMemValue();
-                Interval newInterval = evaluateExpressionToInterval(r,value,prevIntervals);
+                Interval newInterval = evaluateExpressionToInterval(r, value, prevIntervals);
                 interval = interval == null ? newInterval : interval.join(newInterval);
             }
+        } else { interval = Interval.getTop(r.getType()); }
         return interval;
     }
 
@@ -372,11 +376,6 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 
                 if(successor != null) {
                     if (!flowList.contains(successor)) flowList.add(successor);
-                    //if(current instanceof RegWriter rw) {
-                        // if(rw.getResultRegister().getName().contains("r34") && successor instanceof CondJump cj && cj.getLabel().getName().contains("l33")) {
-                        //     // System.out.println("here");
-                        // }
-                   // }
                     Map<Register,Interval> successorIntervals = eventToIntervals.getOrDefault(successor,new HashMap<>());
                     eventToIntervals.put(successor,joinIntervals(currentIntervals,successorIntervals));
                 }
