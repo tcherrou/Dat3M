@@ -79,7 +79,9 @@ public class Interval {
             case ADD -> BigInteger::add;
             case SUB -> BigInteger::subtract;
             case MUL -> BigInteger::multiply;
-            default -> null;
+	        case OR -> BigInteger::or;
+	        case AND -> BigInteger::and;
+	        default -> null;
         };
     }
     public Interval applyOperator(IntBinaryOp op, Interval interval,Type type) {
