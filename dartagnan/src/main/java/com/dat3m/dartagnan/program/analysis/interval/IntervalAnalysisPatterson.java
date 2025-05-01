@@ -1,6 +1,7 @@
 package com.dat3m.dartagnan.program.analysis.interval;
 
 import com.dat3m.dartagnan.expression.integers.*;
+import com.dat3m.dartagnan.expression.misc.ITEExpr;
 import com.dat3m.dartagnan.expression.type.AggregateType;
 import com.dat3m.dartagnan.program.analysis.BackwardsReachingDefinitionsAnalysis;
 import com.dat3m.dartagnan.program.analysis.alias.AliasAnalysis;
@@ -137,7 +138,7 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
                 currentThread = thread;
                 allRegisters = thread.getRegisters();
                 computeIntervalsPatterson(thread);
-                // computeAnalysisMetrics();
+                computeAnalysisMetrics();
             }
         }
 	// Whole program
@@ -213,9 +214,18 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
             IntBinaryOp op = binExpr.getKind();
             Interval interval = evaluateExpressionToInterval(register,binExpr.getLeft(),prevIntervals);
             // TODO: Support more operations such as comparisons
+	    
             return interval.applyOperator(op,getInterval(register,binExpr.getRight(),prevIntervals),  register.getType());
+        } else if (expr instanceof ITEExpr iteExpr){
+            Interval trueInterval =  evaluateExpressionToInterval(register,iteExpr.getTrueCase(),prevIntervals);
+            Interval falseInterval = evaluateExpressionToInterval(register,iteExpr.getFalseCase(),prevIntervals);
+            //System.out.println(expr);
+            //System.out.println(trueInterval.join(falseInterval));
+            return trueInterval.join(falseInterval);
         }
-
+        // System.out.println(expr.getClass());
+        // System.out.println(expr);
+        // System.out.println(register);
         return Interval.getTop(register.getType());
     }
 
@@ -241,6 +251,17 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
                     .collect(Collectors.toSet());
         } else return Collections.emptySet();
     }
+
+//    private Set<Store> getPotentialStores(Load event) {
+//
+//        return program.getThreadEvents(MemoryCoreEvent.class).stream()
+//                .filter(e -> e instanceof Store s && aliasAnalysis.mayAlias(event,s))
+//                .map(e -> (Store) e).collect(Collectors.toSet());
+//    }
+//
+//
+
+
     // Get loads that a store may influence.
     private Set<Load> getPotentialLoads(Store s) {
 	    Set<Load> loads = new HashSet<>();
@@ -249,9 +270,9 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 		    if(m instanceof Load l && aliasAnalysis.mayAlias(s,l)) loads.add(l);
 	    }
 	    return loads;
-
-
     }
+
+
 
 
     // Calculate the interval of a memory address.

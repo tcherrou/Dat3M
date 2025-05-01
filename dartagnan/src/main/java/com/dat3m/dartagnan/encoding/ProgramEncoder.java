@@ -682,11 +682,12 @@ public BooleanFormula encodeBounds() {
         Formula key = entry.getKey();
         Interval interval = entry.getValue();
         // Encode bounds in the SMT encoding using bitvectors or integers.
-        if (key instanceof BitvectorFormula variable) {
+        if (key instanceof BitvectorFormula variable && bvmgr.getLength(variable) != 1) {
             BigInteger upperBound = interval.upperBound;
             BigInteger lowerBound = interval.lowerBound;
-            BooleanFormula constraintLTE = context.encodeComparison(IntCmpOp.ULTE, variable, bvmgr.makeBitvector(bvmgr.getLength(variable), upperBound));
-            BooleanFormula constraintGTE = context.encodeComparison(IntCmpOp.GTE, variable, bvmgr.makeBitvector(bvmgr.getLength(variable), lowerBound));
+            int bitWidth = bvmgr.getLength(variable);
+            BooleanFormula constraintLTE = context.encodeComparison(IntCmpOp.ULTE, variable, bvmgr.makeBitvector(bitWidth, upperBound));
+            BooleanFormula constraintGTE = context.encodeComparison(IntCmpOp.GTE, variable, bvmgr.makeBitvector(bitWidth, lowerBound));
             enc.add(constraintLTE);
             enc.add(constraintGTE);
         } else if (key instanceof IntegerFormula variable) {
