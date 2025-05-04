@@ -29,7 +29,6 @@ import com.dat3m.dartagnan.program.event.core.*;
 import org.sosy_lab.common.configuration.Configuration;
 
 import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.util.*;
@@ -44,11 +43,8 @@ import java.util.stream.Collectors;
  */
 public class IntervalAnalysisPatterson implements IntervalAnalysis {
 
-    Collection<Register> allRegisters;
     private Program program;
     private VerificationTask task;
-    private Thread currentThread;
-    private Event finalEvent;
     private final Queue<Event> dataflowWorkList = new LinkedList<>();
     Map<Event,Map<Register,Interval>> eventToIntervals = new HashMap<>();
 
@@ -174,8 +170,6 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 
         for(Thread thread : program.getThreads()) {
             if(!(thread.getEntry().getSuccessor() instanceof Init)) {
-                currentThread = thread;
-                allRegisters = thread.getRegisters();
                 computeIntervalsPatterson(thread);
             }
         }
@@ -440,7 +434,6 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
                     eventToIntervals.put(successor,joinIntervals(currentIntervals,successorIntervals));
                 }
                 else  {
-                    finalEvent = current;
                 }
             }
 

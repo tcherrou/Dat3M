@@ -84,7 +84,6 @@ public class ProgramEncoder implements Encoder {
 
     public BooleanFormula encodeFullProgram() {
         return context.getBooleanFormulaManager().and(
-                encodeBounds(),
                 encodeControlBarriers(),
                 encodeNamedControlBarriers(),
                 encodeConstants(),
@@ -92,7 +91,8 @@ public class ProgramEncoder implements Encoder {
                 encodeControlFlow(),
                 encodeFinalRegisterValues(),
                 encodeFilter(),
-                encodeDependencies()
+                encodeDependencies(),
+                encodeBounds()
 		);
     }
 
