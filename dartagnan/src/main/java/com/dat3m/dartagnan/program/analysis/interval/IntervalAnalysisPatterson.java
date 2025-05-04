@@ -3,6 +3,7 @@ package com.dat3m.dartagnan.program.analysis.interval;
 import com.dat3m.dartagnan.expression.integers.*;
 import com.dat3m.dartagnan.expression.misc.ITEExpr;
 import com.dat3m.dartagnan.expression.type.AggregateType;
+import com.dat3m.dartagnan.expression.type.IntegerType;
 import com.dat3m.dartagnan.program.analysis.BackwardsReachingDefinitionsAnalysis;
 import com.dat3m.dartagnan.program.analysis.alias.AliasAnalysis;
 import com.dat3m.dartagnan.program.event.RegReader;
@@ -27,6 +28,10 @@ import com.dat3m.dartagnan.program.event.RegWriter;
 import com.dat3m.dartagnan.program.event.core.*;
 import org.sosy_lab.common.configuration.Configuration;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.math.RoundingMode;
+import java.text.DecimalFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -56,26 +61,59 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
         // Iterate over all registers
         // For each register check if their bound is reduced
         // numbers such as reduced and not reduced and print at the end
-        double regReduced = 0.0;
-        double regTop = 0.0;
-        double regTotal = allRegisters.size();
-        Map<Register,Interval> reducedRegisters = new HashMap<>();
-        logger.debug("Computing regular interval metrics for thread: {}", currentThread);
-        for(Register r : allRegisters) {
-            Interval interval = eventToIntervals.get(finalEvent).get(r);
-            if (interval != null) {
-                if(interval.isTop(  r.getType())) regTop++; else {regReduced++; reducedRegisters.put(r,interval);}
-            } else {
-                regTotal--;
+        double totalRegReads = 0;
+        double totalIntervalsReduced = 0;
+        double totalIntervalsTop = 0;
+        BigDecimal totalReducedIntervalSize = BigDecimal.ZERO;
+        for(Event e : program.getThreadEvents()) {
+            if(e instanceof RegReader rr) {
+                Set<Register.Read> regReads = rr.getRegisterReads();
+                totalRegReads += regReads.stream().filter(read -> read.register().getType() instanceof IntegerType).count();
+                for (Register.Read read : regReads) {
+                    Register r = read.register();
+                    if (r.getType() instanceof IntegerType) {
+                        Interval computedInterval = getIntervalAt(e, r);
+                        if (computedInterval.isTop(r.getType())) {
+                            totalIntervalsTop++;
+                        } else {
+                            totalIntervalsReduced++;
+                            totalReducedIntervalSize = totalReducedIntervalSize.add(new BigDecimal(computedInterval.size()));
+                        }
+                    }
+
+                }
             }
         }
-        System.out.println("==============Interval Analysis Summary====================");
-        System.out.println(currentThread);
-        System.out.println("#Registers: " + regTotal);
-        System.out.println("#Bounds reduced: " + regReduced);
-        System.out.println("#Bounds top: " + regTop);
-        System.out.println("Registers reduced:  "+ reducedRegisters);
-        System.out.println("==============Interval Analysis Summary End====================");
+        DecimalFormat df = new DecimalFormat("#.##");
+        double percentageIntervalsReduced = 0;
+        double percentageIntervalsTop = 0;
+        if(totalRegReads != 0) {
+            percentageIntervalsReduced = (totalIntervalsReduced / totalRegReads) * 100;
+            percentageIntervalsTop = (totalIntervalsTop / totalRegReads) * 100;
+        }
+        BigDecimal averageReducedIntervalSize = BigDecimal.ZERO;
+        if (totalIntervalsReduced != 0) {
+            averageReducedIntervalSize = totalReducedIntervalSize.divide(BigDecimal.valueOf((long) totalIntervalsReduced),RoundingMode.HALF_UP);
+        }
+
+        logger.info("""
+                
+                ==============Interval Analysis Summary====================
+                Total register reads: {}
+                Total register bounded {}
+                Total registers top {}
+                Percentage bounded: {}%
+                Percentage top: {}%
+                Average reduced interval size: {}
+                ==============Interval Analysis Summary End================
+                """,
+                totalRegReads,
+                totalIntervalsReduced,
+                totalIntervalsTop,
+                df.format(percentageIntervalsReduced),
+                df.format(percentageIntervalsTop),
+                averageReducedIntervalSize);
+
     }
 
     // For debugging
@@ -122,6 +160,7 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 	    analysis.task = task;
         analysis.program = program;
         analysis.computeIntervalsPatterson(program);
+        analysis.computeAnalysisMetrics();
         // analysis.logIntervals();
         return analysis;
     }
@@ -138,7 +177,6 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
                 currentThread = thread;
                 allRegisters = thread.getRegisters();
                 computeIntervalsPatterson(thread);
-                computeAnalysisMetrics();
             }
         }
 	// Whole program
@@ -207,7 +245,9 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
         if(expr instanceof IntLiteral lit) {
             return Interval.makeDefault(lit.getValue());
         } else if (expr instanceof Register reg) {
-            return prevIntervals.getOrDefault(reg, Interval.getTop(reg.getType()));
+            Interval prevInterval = prevIntervals.getOrDefault(reg, Interval.getTop(reg.getType()));
+            Interval topInterval = Interval.getTop(register.getType());
+            return (prevInterval.size().compareTo(topInterval.size()) > 0) ? topInterval : prevInterval;
         } else if (expr instanceof IntSizeCast cast) {
             return evaluateExpressionToInterval(register,cast.getOperand(),prevIntervals);
         } else if (expr instanceof IntBinaryExpr binExpr){
@@ -298,6 +338,7 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 	    IntervalInfo info = null;
 	    if (e instanceof RegWriter rw) {
             if (!(rw.getResultRegister().getType() instanceof AggregateType)) {
+
                 if (rw instanceof Local lc) {
                     Register result = lc.getResultRegister();
                     Expression exp = lc.getExpr();
@@ -308,10 +349,8 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
                     info = new IntervalInfo(ld.getResultRegister(), interval);
                 } else if (rw instanceof ThreadArgument ta) {
                     Expression arg = ta.getCreator().getArguments().get(ta.getIndex());
-                    if (arg instanceof IntLiteral lit) {
-                        Register result = ta.getResultRegister();
-                        info = new IntervalInfo(result, evaluateExpressionToInterval(result, lit, prevIntervals));
-                    }
+                    Register result = ta.getResultRegister();
+                    info = new IntervalInfo(result, evaluateExpressionToInterval(result, arg, prevIntervals));
                 } else {
                     info = new IntervalInfo(rw.getResultRegister(), Interval.getTop(rw.getResultRegister().getType()));
                 }
@@ -464,7 +503,6 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 
 	    }
     }
-
 
 
 }

@@ -26,7 +26,7 @@ public class Interval {
     public class IntervalPair {
         Interval left;
         Interval right;
-	Register reg = null;
+	    Register reg = null;
 
         public IntervalPair(Interval left,Interval right) {
             this.left= left;
@@ -53,7 +53,9 @@ public class Interval {
         else throw new RuntimeException("Unsupported type: " + type.getClass());
 
     }
-
+    public BigInteger size() {
+        return (this.upperBound.subtract(this.lowerBound)).add(BigInteger.ONE);
+    }
 
     // FIXME: better name needed
     public static Interval makeDefault(BigInteger value) {
