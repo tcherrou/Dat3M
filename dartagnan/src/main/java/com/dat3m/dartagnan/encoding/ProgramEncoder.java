@@ -3,7 +3,6 @@ package com.dat3m.dartagnan.encoding;
 import com.dat3m.dartagnan.expression.integers.IntCmpOp;
 import com.dat3m.dartagnan.configuration.ProgressModel;
 import com.dat3m.dartagnan.expression.Expression;
-import com.dat3m.dartagnan.expression.integers.IntCmpOp;
 import com.dat3m.dartagnan.expression.integers.IntLiteral;
 import com.dat3m.dartagnan.expression.type.IntegerType;
 import com.dat3m.dartagnan.program.Thread;
@@ -64,6 +63,8 @@ public class ProgramEncoder implements Encoder {
     private final ExecutionAnalysis exec;
     private final ReachingDefinitionsAnalysis definitions;
 
+    private ProverWithTracker prover;
+
     private ProgramEncoder(EncodingContext c) {
         Preconditions.checkArgument(c.getTask().getProgram().isCompiled(), "The program must be compiled before encoding.");
         context = c;
@@ -72,8 +73,9 @@ public class ProgramEncoder implements Encoder {
         this.definitions = c.getAnalysisContext().requires(ReachingDefinitionsAnalysis.class);
     }
 
-    public static ProgramEncoder withContext(EncodingContext context) throws InvalidConfigurationException {
+    public static ProgramEncoder withContext(EncodingContext context,ProverWithTracker prover) throws InvalidConfigurationException {
         ProgramEncoder encoder = new ProgramEncoder(context);
+        encoder.prover = prover;
         context.getTask().getConfig().inject(encoder);
         logger.info("{}: {}", INITIALIZE_REGISTERS, encoder.initializeRegisters);
         logger.info("{}: {}", IGNORE_FILTER_SPECIFICATION, encoder.ignoreFilterSpec);
@@ -82,8 +84,8 @@ public class ProgramEncoder implements Encoder {
 
     // ====================================== Encoding ======================================
 
-    public BooleanFormula encodeFullProgram() {
-        return context.getBooleanFormulaManager().and(
+    public BooleanFormula encodeFullProgram() throws InterruptedException {
+        BooleanFormula encodedProgram = context.getBooleanFormulaManager().and(
                 encodeControlBarriers(),
                 encodeNamedControlBarriers(),
                 encodeConstants(),
@@ -91,9 +93,10 @@ public class ProgramEncoder implements Encoder {
                 encodeControlFlow(),
                 encodeFinalRegisterValues(),
                 encodeFilter(),
-                encodeDependencies(),
-                encodeBounds()
+                encodeDependencies()
 		);
+        encodeBounds();
+        return encodedProgram;
     }
 
     public BooleanFormula encodeConstants() {
@@ -671,7 +674,7 @@ public class ProgramEncoder implements Encoder {
 
 // ============= Bounds =============
 //
-public BooleanFormula encodeBounds() {
+public void encodeBounds() throws InterruptedException {
 
 	Map<Formula,Interval> bvToInterval = context.bvToInterval;
     FormulaManager fmgr = context.getFormulaManager();
@@ -682,25 +685,35 @@ public BooleanFormula encodeBounds() {
         Formula key = entry.getKey();
         Interval interval = entry.getValue();
         // Encode bounds in the SMT encoding using bitvectors or integers.
-        if (key instanceof BitvectorFormula variable && bvmgr.getLength(variable) != 1) {
+        if (key instanceof BitvectorFormula variable) {
             BigInteger upperBound = interval.upperBound;
             BigInteger lowerBound = interval.lowerBound;
             int bitWidth = bvmgr.getLength(variable);
-            BooleanFormula constraintLTE = context.encodeComparison(IntCmpOp.ULTE, variable, bvmgr.makeBitvector(bitWidth, upperBound));
-            BooleanFormula constraintGTE = context.encodeComparison(IntCmpOp.GTE, variable, bvmgr.makeBitvector(bitWidth, lowerBound));
-            enc.add(constraintLTE);
-            enc.add(constraintGTE);
+            // TODO: Revise this
+            BooleanFormula lowerBoundConstraint = (lowerBound.signum() == -1) ?
+                    context.encodeComparison(IntCmpOp.GTE, variable, bvmgr.makeBitvector(bitWidth, lowerBound)) :
+                    context.encodeComparison(IntCmpOp.UGTE, variable, bvmgr.makeBitvector(bitWidth, lowerBound));
+
+            BooleanFormula upperBoundConstraint = (upperBound.signum() == -1) ?
+                    context.encodeComparison(IntCmpOp.LTE, variable, bvmgr.makeBitvector(bitWidth, upperBound)) :
+                    context.encodeComparison(IntCmpOp.ULTE, variable, bvmgr.makeBitvector(bitWidth, upperBound));
+
+
+
+
+            prover.addConstraint(lowerBoundConstraint);
+            prover.addConstraint(upperBoundConstraint);
+
         } else if (key instanceof IntegerFormula variable) {
             BigInteger upperBound = interval.upperBound;
             BigInteger lowerBound = interval.lowerBound;
             BooleanFormula constraintLTE = context.encodeComparison(IntCmpOp.ULTE, variable, imgr.makeNumber(upperBound));
             BooleanFormula constraintGTE = context.encodeComparison(IntCmpOp.GTE, variable, imgr.makeNumber(lowerBound));
-            enc.add(constraintLTE);
-            enc.add(constraintGTE);
+            prover.addConstraint(constraintLTE);
+            prover.addConstraint(constraintGTE);
         }
     }
-	return context.getBooleanFormulaManager().and(enc);
-	
+
 
 }
 

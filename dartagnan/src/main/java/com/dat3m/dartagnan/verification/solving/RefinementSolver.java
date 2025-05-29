@@ -234,7 +234,7 @@ public class RefinementSolver extends ModelChecker {
         // ------------------------ Encoding ------------------------
         performIntervalAnalysis(baselineTask,baselineContext,config);
         context = EncodingContext.of(baselineTask, baselineContext, ctx.getFormulaManager());
-        final ProgramEncoder programEncoder = ProgramEncoder.withContext(context);
+        final ProgramEncoder programEncoder = ProgramEncoder.withContext(context,prover);
         final PropertyEncoder propertyEncoder = PropertyEncoder.withContext(context);
         // We use the original memory model for symmetry breaking because we need axioms
         // to compute the breaking order.

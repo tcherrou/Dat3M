@@ -52,7 +52,7 @@ public class AssumeSolver extends ModelChecker {
         performStaticWmmAnalyses(task, analysisContext, config);
         performIntervalAnalysis(task,analysisContext,config);
         context = EncodingContext.of(task, analysisContext, ctx.getFormulaManager());
-        ProgramEncoder programEncoder = ProgramEncoder.withContext(context);
+        ProgramEncoder programEncoder = ProgramEncoder.withContext(context,prover);
         PropertyEncoder propertyEncoder = PropertyEncoder.withContext(context);
         WmmEncoder wmmEncoder = WmmEncoder.withContext(context);
         SymmetryEncoder symmetryEncoder = SymmetryEncoder.withContext(context);
