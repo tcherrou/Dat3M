@@ -29,6 +29,7 @@ import com.dat3m.dartagnan.program.event.core.*;
 import org.sosy_lab.common.configuration.Configuration;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.util.*;
@@ -110,6 +111,16 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
                 df.format(percentageIntervalsTop),
                 averageReducedIntervalSize);
 
+
+        if (!unsupportedExpressions.isEmpty()) {
+            logger.warn("Unsupported expressions found: {}",unsupportedExpressions);
+        }
+
+        Set<Object> unsupportedOperators = Interval.getUnsupportedOperatorsFound();
+        if(!unsupportedOperators.isEmpty()) {
+            logger.warn("Unsupported operators found: {}",Interval.getUnsupportedOperatorsFound());
+        }
+
     }
 
     // For debugging
@@ -147,17 +158,16 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
     }
 
     static Logger logger = LogManager.getLogger(IntervalAnalysis.class);
-
+    Set<Object> unsupportedExpressions = new HashSet<>();
     public static IntervalAnalysis fromConfig(Program program, Context analysisContext, VerificationTask task,Configuration config) {
         IntervalAnalysisPatterson analysis = new IntervalAnalysisPatterson();
-	    analysis.relationAnalysis = analysisContext.get(RelationAnalysis.class);
-	    analysis.aliasAnalysis = analysisContext.get(AliasAnalysis.class);
+        analysis.relationAnalysis = analysisContext.get(RelationAnalysis.class);
+        analysis.aliasAnalysis = analysisContext.get(AliasAnalysis.class);
         analysis.reachingDefinitionsAnalysis =(BackwardsReachingDefinitionsAnalysis) analysisContext.get(ReachingDefinitionsAnalysis.class);
-	    analysis.task = task;
+        analysis.task = task;
         analysis.program = program;
         analysis.computeIntervalsPatterson(program);
         analysis.computeAnalysisMetrics();
-        // analysis.logIntervals();
         return analysis;
     }
 
@@ -167,14 +177,14 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
     }
 
     private void computeIntervalsPatterson(Program program) {
-
+        // Thread local
         for(Thread thread : program.getThreads()) {
             if(!(thread.getEntry().getSuccessor() instanceof Init)) {
                 computeIntervalsPatterson(thread);
             }
         }
-	// Whole program
-	processDataFlow(dataflowWorkList);
+        // Whole program
+        processDataFlow(dataflowWorkList);
     }
 
     private Map<Register,Interval> initialiseIntervals(Function f) {
@@ -186,9 +196,15 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
     }
 
     private void computeIntervalsPatterson(Function function) {
-        Queue<Event> flowList = new LinkedList<>();
-        flowList.add(function.getEntry().getSuccessor());
-        eventToIntervals.put(function.getEntry().getSuccessor(),new HashMap<>());
+        function.getEvents().forEach(e -> eventToIntervals.put(e,new HashMap<>()));
+        Queue<Event> flowList = new LinkedList<>(function.getEvents());
+        flowList.remove();
+        List<Register> parameters = function.getParameterRegisters();
+        Map<Register,Interval> paramIntervals = new HashMap<>();
+        for (Register r : parameters) {
+            paramIntervals.put(r,Interval.getTop(r.getType()));
+        }
+        eventToIntervals.put(function.getEntry().getSuccessor(),paramIntervals);
         processControlFlow(flowList);
 
 
@@ -248,18 +264,14 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
             IntBinaryOp op = binExpr.getKind();
             Interval interval = evaluateExpressionToInterval(register,binExpr.getLeft(),prevIntervals);
             // TODO: Support more operations such as comparisons
-	    
+
             return interval.applyOperator(op,getInterval(register,binExpr.getRight(),prevIntervals),  register.getType());
         } else if (expr instanceof ITEExpr iteExpr){
             Interval trueInterval =  evaluateExpressionToInterval(register,iteExpr.getTrueCase(),prevIntervals);
             Interval falseInterval = evaluateExpressionToInterval(register,iteExpr.getFalseCase(),prevIntervals);
-            //System.out.println(expr);
-            //System.out.println(trueInterval.join(falseInterval));
             return trueInterval.join(falseInterval);
         }
-        // System.out.println(expr.getClass());
-        // System.out.println(expr);
-        // System.out.println(register);
+        unsupportedExpressions.add(expr.getClass());
         return Interval.getTop(register.getType());
     }
 
@@ -286,28 +298,21 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
         } else return Collections.emptySet();
     }
 
-//    private Set<Store> getPotentialStores(Load event) {
-//
-//        return program.getThreadEvents(MemoryCoreEvent.class).stream()
-//                .filter(e -> e instanceof Store s && aliasAnalysis.mayAlias(event,s))
-//                .map(e -> (Store) e).collect(Collectors.toSet());
-//    }
-//
-//
+
 
 
     // Get loads that a store may influence.
     private Set<Load> getPotentialLoads(Store s) {
-	    Set<Load> loads = new HashSet<>();
-	    List<MemoryCoreEvent> memEvents = program.getThreadEvents(MemoryCoreEvent.class);
-	    for (MemoryCoreEvent m : memEvents) {	
-		    if(m instanceof Load l && aliasAnalysis.mayAlias(s,l)) loads.add(l);
-	    }
-	    return loads;
+        Set<Load> loads = new HashSet<>();
+        List<MemoryCoreEvent> memEvents = program.getThreadEvents(MemoryCoreEvent.class);
+        for (MemoryCoreEvent m : memEvents) {
+            if(m instanceof Load l && aliasAnalysis.mayAlias(s,l)) loads.add(l);
+        }
+        return loads;
     }
 
 
-
+    List<Event> events = new LinkedList<>();
 
     // Calculate the interval of a memory address.
     // Takes into account all stores from a load can read from.
@@ -328,10 +333,10 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 
     // Analyse an event to calculate an interval for a register.
     private IntervalInfo analyseEvent(Event e) {
-	    Map<Register,Interval> prevIntervals = eventToIntervals.get(e);
-	    IntervalInfo info = null;
-	    if (e instanceof RegWriter rw) {
-            if (!(rw.getResultRegister().getType() instanceof AggregateType)) {
+        Map<Register,Interval> prevIntervals = eventToIntervals.get(e);
+        IntervalInfo info = null;
+        if (e instanceof RegWriter rw) {
+            if ((rw.getResultRegister().getType() instanceof IntegerType)) {
 
                 if (rw instanceof Local lc) {
                     Register result = lc.getResultRegister();
@@ -350,29 +355,49 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
                 }
             }
         }
-	    return info;
+        return info;
     }
 
 
     private void addReadersToDataFlowList(RegWriter rw) {
-	    reachingDefinitionsAnalysis.getReaders(rw).getReaders().forEach(x -> {
-		    if (!dataflowWorkList.contains(x)) dataflowWorkList.add(x);
-	    });
+        reachingDefinitionsAnalysis.getReaders(rw).getReaders().forEach(x -> {
+            if (!dataflowWorkList.contains(x)) dataflowWorkList.add(x);
+        });
     }
 
     // Process the control flow of a thread.
     private void processControlFlow(Queue<Event> flowList) {
-	while(!flowList.isEmpty()) {
+        while(!flowList.isEmpty()) {
             Event current = flowList.remove();
             Map<Register,Interval> prevIntervals = new HashMap<>(eventToIntervals.get(current));
+            Set<Register> unitialisedRegisters  = new HashSet<>();
+            if (current instanceof RegReader rr) {
+                Set<Register.Read> reads = rr.getRegisterReads();
+                for(Register.Read read : reads) {
+                    Register r = read.register();
+                    if (!prevIntervals.containsKey(r) && r.getType() instanceof IntegerType) {
+                        unitialisedRegisters.add(r);
+                        prevIntervals.put(r,Interval.getTop(r.getType()));
+                    }
+                }
+            }
             IntervalInfo info = analyseEvent(current);
             if (info != null) {
-		if(current instanceof RegWriter rw) {
-			addReadersToDataFlowList(rw);
+                if(current instanceof RegWriter rw) {
+                    addReadersToDataFlowList(rw);
 
-		}
-		updateIntervals(current,info,prevIntervals);
+                }
+
+                updateIntervals(current,info,prevIntervals);
             }
+
+            for(Register r : unitialisedRegisters) {
+                Map<Register,Interval> intervals = eventToIntervals.get(current);
+                if(!intervals.containsKey(r)) {
+                    intervals.put(r,Interval.getTop(r.getType()));
+                }
+            }
+
             Map<Register,Interval> currentIntervals = eventToIntervals.get(current);
             // TODO: Review all the paths
             if (current instanceof CondJump cj) {
@@ -380,14 +405,10 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
                 Map<Register,Interval> labelIntervals = eventToIntervals.getOrDefault(l,new HashMap<>());
                 // Unconditional jump
                 if(cj.isGoto()) {
-                    if (!flowList.contains(cj)) flowList.add(l);
                     eventToIntervals.put(l,joinIntervals(currentIntervals,labelIntervals));
-                    //if (l.getName().contains())
                 } else {
                     // Conditional jump can take two paths
                     Event successor = cj.getSuccessor();
-                    if (!flowList.contains(l)) flowList.add(l);
-                    if (!flowList.contains(successor)) flowList.add(successor);
                     Map<Register,Interval> successorIntervals = eventToIntervals.getOrDefault(successor,new HashMap<>());
                     // TODO: Revise or remove this part
 //                    if (cj.getGuard() instanceof IntCmpExpr cmp) {
@@ -429,22 +450,19 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
                 Event successor = current.getSuccessor();
 
                 if(successor != null) {
-                    if (!flowList.contains(successor)) flowList.add(successor);
                     Map<Register,Interval> successorIntervals = eventToIntervals.getOrDefault(successor,new HashMap<>());
                     eventToIntervals.put(successor,joinIntervals(currentIntervals,successorIntervals));
                 }
-                else  {
-                }
             }
 
-	}
+        }
 
     }
 
 
     private void updateIntervals(Event current,IntervalInfo info, Map<Register,Interval> prevIntervals) {
-		prevIntervals.put(info.reg,info.interval);
-                eventToIntervals.put(current,prevIntervals);
+        prevIntervals.put(info.reg,info.interval);
+        eventToIntervals.put(current,prevIntervals);
     }
 
     private void propagateNewIntervalToEvents(Collection<? extends Event> events,IntervalInfo info) {
@@ -473,28 +491,25 @@ public class IntervalAnalysisPatterson implements IntervalAnalysis {
 
     // Process dataflow of the whole program (mostly to deal with load and stores).
     private void processDataFlow(Queue<Event> dataflowList) {
-	    while(!dataflowList.isEmpty()) {
-		    IntervalInfo info;
-		    Event current = dataflowList.remove();
-		    Map<Register,Interval> prevIntervals = new HashMap<>(eventToIntervals.get(current));
-		    if (current instanceof RegWriter rw) {
-			    info = analyseEvent(current);
-			    Interval oldInterval = prevIntervals.get(rw.getResultRegister());
-			    if (info != null && oldInterval != null) {
-				    if (!oldInterval.equals(info.interval)) {
-					    addReadersToDataFlowList(rw);
-					    updateIntervals(current,info,prevIntervals);
+        while(!dataflowList.isEmpty()) {
+            IntervalInfo info;
+            Event current = dataflowList.remove();
+            Map<Register,Interval> prevIntervals = new HashMap<>(eventToIntervals.get(current));
+            if (current instanceof RegWriter rw) {
+                info = analyseEvent(current);
+                Interval oldInterval = prevIntervals.get(rw.getResultRegister());
+                if (info != null && oldInterval != null) {
+                    if (!oldInterval.equals(info.interval)) {
+                        addReadersToDataFlowList(rw);
+                        updateIntervals(current,info,prevIntervals);
                         propagateNewIntervalToEvents(reachingDefinitionsAnalysis.getReaders(rw).getReaders(),info);
-				    }
-			    } 
-		    } else if (current instanceof Store s) {
-			    Set<Load> loads = getPotentialLoads(s);
-			    dataflowWorkList.addAll(loads);
-		    }
-
-
-
-	    }
+                    }
+                }
+            } else if (current instanceof Store s) {
+                Set<Load> loads = getPotentialLoads(s);
+                dataflowWorkList.addAll(loads);
+            }
+        }
     }
 
 
